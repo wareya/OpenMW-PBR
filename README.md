@@ -18,4 +18,4 @@ lighting method = shaders
 
 ## License
 
-Licensed under the GNU GPL v3. See LICENSE and AUTHORS.md for more information.
+Licensed under the GNU GPL v3. See LICENSE and AUTHORS.md for more information. AUTHORS.md contains a list of contributors to OpenMW, only some of which have contributed to the shader code that these shaders are based on.
