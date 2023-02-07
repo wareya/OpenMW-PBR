@@ -13,7 +13,7 @@
 #define PBR_VERTEX_COLOR_HACK 1
 // how to interpret color texture to automatically generate roughness
 #define PBR_AUTO_ROUGHNESS_MIN 0.35
-#define PBR_AUTO_ROUGHNESS_MAX 1.0
+#define PBR_AUTO_ROUGHNESS_MAX 0.9
 // whether pbr specularoty materials have inverted roughness or not
 #define PBR_MAT_ROUGHNESS_INVERTED 0
 // how many units away from the light is considered "standard" falloff
@@ -249,7 +249,11 @@ vec3 doLightingPBR(float alpha, vec3 diffuseColor, vec3 diffuseVertexColor, vec3
         float falloff = legacy_falloff;
 #endif
 #endif
+#if DO_PBR
         float cutoff = lcalcCutoff(i, lightDistance/PBR_LIGHT_BOUNDING_SPHERE_MULTIPLIER);
+#else
+        float cutoff = lcalcCutoff(i, lightDistance);
+#endif
         falloff *= cutoff;
         
         vec3 ambient = lcalcAmbient(i);
