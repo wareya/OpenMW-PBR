@@ -211,6 +211,9 @@ vec3 viewNormal = normalize(gl_NormalMatrix * normal);
 #endif
 
     float shadowing = unshadowedLightRatio(-passViewPos.z);
+    
+#if PBR_BYPASS
+
     vec3 lighting;
 #if !PER_PIXEL_LIGHTING
     lighting = passLighting + shadowDiffuseLighting * shadowing;
@@ -225,6 +228,26 @@ vec3 viewNormal = normalize(gl_NormalMatrix * normal);
 
     gl_FragData[0].xyz *= lighting;
 
+#else // PBR_BYPASS
+
+    vec3 color = gl_FragData[0].xyz;
+    float metallicity = 0.0;
+    float roughness = 1.0;
+    float ao = 1.0;
+    float f0 = 0.04;
+#if @specularMap
+    vec4 specTex = texture2D(specularMap, (SPECMAP_USE_DIFFUSE_UV != 0) ? adjustedDiffuseUV : specularMapUV);
+    specMapToPBR(specTex, metallicity, roughness, ao, f0);
+#else
+    fakePbrEstimate(color, metallicity, roughness, ao, f0);
+#endif
+    roughness *= 1.0 - gl_FrontMaterial.shininess;
+    
+    float a = gl_FragData[0].a;
+    gl_FragData[0].xyz = doLightingPBR(a, gl_FragData[0].xyz, diffuseColor.xyz, getAmbientColor().xyz, getEmissionColor().xyz, getSpecularColor().xyz, passViewPos, viewNormal, shadowing, metallicity, roughness, ao, f0);
+
+#endif // PBR_BYPASS
+
 #if @envMap && !@preLightEnv
     gl_FragData[0].xyz += envEffect;
 #endif
@@ -232,6 +255,8 @@ vec3 viewNormal = normalize(gl_NormalMatrix * normal);
 #if @emissiveMap
     gl_FragData[0].xyz += texture2D(emissiveMap, emissiveMapUV).xyz;
 #endif
+
+#if PBR_BYPASS
 
 #if @specularMap
     vec4 specTex = texture2D(specularMap, specularMapUV);
@@ -247,6 +272,8 @@ vec3 viewNormal = normalize(gl_NormalMatrix * normal);
     {
         gl_FragData[0].xyz += getSpecular(viewNormal, viewVec, shininess, matSpec) * shadowing;
     }
+
+#endif
 
     gl_FragData[0] = applyFogAtPos(gl_FragData[0], passViewPos);
 

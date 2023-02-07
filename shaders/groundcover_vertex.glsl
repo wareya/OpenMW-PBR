@@ -26,7 +26,9 @@ varying vec4 passTangent;
 
 // Other shaders respect forcePPL, but legacy groundcover mods were designed to work with vertex lighting.
 // They may do not look as intended with per-pixel lighting, so ignore this setting for now.
-#define PER_PIXEL_LIGHTING @normalMap
+//#define PER_PIXEL_LIGHTING @normalMap
+// Need per-pixel lighting to do PBR, and it doesn't look THAT wrong
+#define PER_PIXEL_LIGHTING (@normalMap || @forcePPL)
 
 varying float euclideanDepth;
 varying float linearDepth;
@@ -45,7 +47,7 @@ varying vec3 passNormal;
 #include "depth.glsl"
 
 uniform float osg_SimulationTime;
-uniform mat4 osg_ViewMatrixInverse;
+//uniform mat4 osg_ViewMatrixInverse;
 uniform mat4 osg_ViewMatrix;
 uniform float windSpeed;
 uniform vec3 playerPos;

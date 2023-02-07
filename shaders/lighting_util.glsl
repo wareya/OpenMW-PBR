@@ -73,14 +73,32 @@ float lcalcRadius(int lightIndex)
 }
 #endif
 
+float lcalcCutoff(int lightIndex, float lightDistance)
+{
+    return 1.0 - quickstep((lightDistance / lcalcRadius(lightIndex)) - 1.0);
+}
+
 float lcalcIllumination(int lightIndex, float lightDistance)
 {
 #if @lightingMethodPerObjectUniform
     float illumination = clamp(1.0 / (@getLight[lightIndex][0].w + @getLight[lightIndex][1].w * lightDistance + @getLight[lightIndex][2].w * lightDistance * lightDistance), 0.0, 1.0);
-    return (illumination * (1.0 - quickstep((lightDistance / lcalcRadius(lightIndex)) - 1.0)));
+    return (illumination * lcalcCutoff(lightIndex, lightDistance));
 #elif @lightingMethodUBO
     float illumination = clamp(1.0 / (@getLight[lightIndex].attenuation.x + @getLight[lightIndex].attenuation.y * lightDistance + @getLight[lightIndex].attenuation.z * lightDistance * lightDistance), 0.0, 1.0);
-    return (illumination * (1.0 - quickstep((lightDistance / lcalcRadius(lightIndex)) - 1.0)));
+    return (illumination * lcalcCutoff(lightIndex, lightDistance));
+#else
+    return clamp(1.0 / (@getLight[lightIndex].constantAttenuation + @getLight[lightIndex].linearAttenuation * lightDistance + @getLight[lightIndex].quadraticAttenuation * lightDistance * lightDistance), 0.0, 1.0);
+#endif
+}
+
+float lcalcIlluminationNoCutoff(int lightIndex, float lightDistance)
+{
+#if @lightingMethodPerObjectUniform
+    float illumination = clamp(1.0 / (@getLight[lightIndex][0].w + @getLight[lightIndex][1].w * lightDistance + @getLight[lightIndex][2].w * lightDistance * lightDistance), 0.0, 1.0);
+    return illumination;
+#elif @lightingMethodUBO
+    float illumination = clamp(1.0 / (@getLight[lightIndex].attenuation.x + @getLight[lightIndex].attenuation.y * lightDistance + @getLight[lightIndex].attenuation.z * lightDistance * lightDistance), 0.0, 1.0);
+    return illumination;
 #else
     return clamp(1.0 / (@getLight[lightIndex].constantAttenuation + @getLight[lightIndex].linearAttenuation * lightDistance + @getLight[lightIndex].quadraticAttenuation * lightDistance * lightDistance), 0.0, 1.0);
 #endif

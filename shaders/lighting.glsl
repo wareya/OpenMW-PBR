@@ -1,4 +1,6 @@
 #include "lighting_util.glsl"
+#include "lighting_pbr.glsl"
+
 
 void perLightSun(out vec3 diffuseOut, vec3 viewPos, vec3 viewNormal)
 {

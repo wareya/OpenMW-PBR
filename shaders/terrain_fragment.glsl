@@ -8,6 +8,8 @@
     #extension GL_EXT_gpu_shader4: require
 #endif
 
+#define TERRAIN
+
 varying vec2 uv;
 
 uniform sampler2D diffuseMap;
@@ -84,6 +86,9 @@ void main()
     gl_FragData[0].a *= diffuseColor.a;
 
     float shadowing = unshadowedLightRatio(linearDepth);
+    
+#if PBR_BYPASS
+
     vec3 lighting;
 #if !PER_PIXEL_LIGHTING
     lighting = passLighting + shadowDiffuseLighting * shadowing;
@@ -97,6 +102,29 @@ void main()
 
     gl_FragData[0].xyz *= lighting;
 
+#else // PBR_BYPASS
+
+    vec3 color = gl_FragData[0].xyz;
+    float metallicity = 0.0;
+    float roughness = 1.0;
+    float ao = 1.0;
+    float f0 = 0.04;
+#if @specularMap
+    vec4 specTex = vec4(0.0, diffuseTex.a, 1.0, 1.0);
+    specMapToPBR(specTex, metallicity, roughness, ao, f0);
+#else
+    fakePbrEstimate(color, metallicity, roughness, ao, f0);
+#endif
+    roughness *= 1.0 - gl_FrontMaterial.shininess;
+    
+    float a = 1.0;
+    gl_FragData[0].xyz = doLightingPBR(a, gl_FragData[0].xyz, diffuseColor.xyz, getAmbientColor().xyz, getEmissionColor().xyz, getSpecularColor().xyz, passViewPos, viewNormal, shadowing, metallicity, roughness, ao, f0);
+
+#endif // PBR_BYPASS
+
+
+#if PBR_BYPASS
+
 #if @specularMap
     float shininess = 128.0; // TODO: make configurable
     vec3 matSpec = vec3(diffuseTex.a);
@@ -109,6 +137,8 @@ void main()
     {
         gl_FragData[0].xyz += getSpecular(viewNormal, normalize(passViewPos), shininess, matSpec) * shadowing;
     }
+
+#endif
 
     gl_FragData[0] = applyFogAtDist(gl_FragData[0], euclideanDepth, linearDepth);
 
