@@ -125,6 +125,11 @@ void main()
 
 #if @normalMap
     vec4 normalTex = texture2D(normalMap, normalMapUV);
+#if NORMAL_RECONSTRUCT_Z
+    normalTex.xyz = normalTex.xyz * 2.0 - 1.0;
+    normalTex.z = sqrt(1.0 - normalTex.x*normalTex.x - normalTex.y*normalTex.y);
+    normalTex.xyz = normalTex.xyz * 0.5 + 0.5;
+#endif
 
     vec3 normalizedNormal = normal;
     vec3 normalizedTangent = normalize(passTangent.xyz);
@@ -146,6 +151,11 @@ void main()
 #if 1
     // fetch a new normal using updated coordinates
     normalTex = texture2D(normalMap, adjustedDiffuseUV);
+#if NORMAL_RECONSTRUCT_Z
+    normalTex.xyz = normalTex.xyz * 2.0 - 1.0;
+    normalTex.z = sqrt(1.0 - normalTex.x*normalTex.x - normalTex.y*normalTex.y);
+    normalTex.xyz = normalTex.xyz * 0.5 + 0.5;
+#endif
 
     normal = normalize(tbnTranspose * (normalTex.xyz * 2.0 - 1.0));
 #endif
@@ -241,7 +251,7 @@ vec3 viewNormal = normalize(gl_NormalMatrix * normal);
 #else
     fakePbrEstimate(color, metallicity, roughness, ao, f0);
 #endif
-    roughness *= 1.0 - gl_FrontMaterial.shininess;
+    //roughness = mix(roughness, 0.0, gl_FrontMaterial.shininess);
     
     float a = gl_FragData[0].a;
     gl_FragData[0].xyz = doLightingPBR(a, gl_FragData[0].xyz, diffuseColor.xyz, getAmbientColor().xyz, getEmissionColor().xyz, getSpecularColor().xyz, passViewPos, viewNormal, shadowing, metallicity, roughness, ao, f0);

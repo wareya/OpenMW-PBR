@@ -2,7 +2,14 @@
 
 #define DEBUG_SHOW_ROUGHNESS 0
 
+// throw away the blue channel of normal maps and reconstruct it
+// also functions as a way to "fix" normal maps with broken compression (but not perfectly! fix your textures!)
+#define NORMAL_RECONSTRUCT_Z 0
+
+// bypass all PBR logic and use vanilla shading
 #define PBR_BYPASS 0
+
+// use diffiseu UVs for specmaps (allow parallax on specmaps)
 #define SPECMAP_USE_DIFFUSE_UV 1
 
 #define PI 3.141592653589793
@@ -16,23 +23,32 @@
 #define PBR_AUTO_ROUGHNESS_MAX 0.9
 // whether pbr specularoty materials have inverted roughness or not
 #define PBR_MAT_ROUGHNESS_INVERTED 0
+// prevent roughness from being less than this amount (reduces speckling on bad textures)
+#define PBR_MAT_ROUGHNESS_FLOOR 0.2
 // how many units away from the light is considered "standard" falloff
 // used to estimate how bright it should be in quadratic falloff
 // note: specularity always uses quadratic falloff
-//#define PBR_FALLOFF_REF_DISTANCE 150.0
-//#define PBR_QUADRATIC_BOOST 0.2
 #define PBR_FALLOFF_REF_DISTANCE 70.0
 #define PBR_QUADRATIC_BOOST 1.0
-// force quadratic light falloff
+// force quadratic light falloff (only looks right with gamma values near 2.2)
+// the main use of vertex colors in MW assets is as a GI approximation
+// this hack makes vertex colors affect light instead of diffuse
 #define PBR_FORCE_QUADRATIC_FALLOFF 0
 // prevent quadratic light from being infinite at zero distance
 #define PBR_FORCE_QUADRATIC_FALLOFF_CONSTANT 4.0
 // whether to reinterpret falloff as being gamma-compressed (recommended: on)
 #define PBR_COMPRESSED_FALLOFF 1
-// match with the light bounding sphere setting under your video options
+// match with the light bounding sphere setting under your video options, or lower for better performance
+// WARNING: affects performance a LOT. set to 1.0 for a performance boost
 #define PBR_LIGHT_BOUNDING_SPHERE_MULTIPLIER 5.0
+// for groundcover (lower because expensive)
+// WARNING: affects performance a LOT.
+#define PBR_LIGHT_BOUNDING_SPHERE_MULTIPLIER_GROUNDCOVER 1.0
 
 #if DO_PBR && !PBR_BYPASS
+// default 2.2, approximation of the sRGB gamma curve
+// set to 2.0 for a small performance boost but slightly less accurate lights
+// THIS IS NOT A SCREEN GAMMA ADJUSTMENT. IT DOES NOT MAKE THE SCREEN OVERALL BRIGHTER/DARKER.
 #define GAMMA 2.2
 #else
 #define GAMMA 1.0
@@ -59,21 +75,21 @@ vec3 fresnelSchlick(float incidence, vec3 f0, vec3 f90)
     float t = clamp(1.0 - incidence, 0.0, 1.0);
     float t2 = t*t;
     float t5 = t2*t2*t;
-    return f0 + (f90 - f0) * t5;
+    return mix(f0, f90, t5);
 }
 float distGGX(float halfIncidence, float r)
 {
     r = r*r;
     r = r*r;
     
-    float d = (halfIncidence*halfIncidence * (r - 1.0) + 1.0);
+    float d = halfIncidence*halfIncidence * (r - 1.0) + 1.0;
     
     return r / (d * d * PI);
 }
 float geoSchlickGGX(float incidence, float roughness)
 {
     roughness += 1.0;
-    float k = roughness * roughness * (1.0/8.0);
+    float k = (roughness * roughness) / 8.0;
     return incidence / mix(incidence, 1.0, k);
 }
 float geoSmith(float viewIncidence, float lightIncidence, float roughness)
@@ -92,13 +108,19 @@ float BRDF(vec3 normalDir, vec3 viewDir, vec3 lightDir, vec3 halfDir, float roug
     return (NDF * geo) / (4.0 * viewIncidence * lightIncidence);
 }
 
+
+vec3 fast_sign(vec3 x)
+{
+    return clamp(x*100000000000.0, -1.0, 1.0);
+}
+
 vec3 to_linear(vec3 color)
 {
-    return sign(color) * pow(abs(color), vec3(GAMMA));
+    return fast_sign(color) * pow(abs(color), vec3(GAMMA));
 }
 vec3 to_srgb(vec3 color)
 {
-    return sign(color) * pow(abs(color), vec3(1.0/GAMMA));
+    return fast_sign(color) * pow(abs(color), vec3(1.0/GAMMA));
 }
 
 vec3 perLightPBR(float alpha, vec3 diffuseColor, vec3 diffuseVertexColor, vec3 ambientColor, vec3 shadowing, vec3 normal, vec3 viewPos, vec3 lightPos, float lightDistance, float radius, float falloff, float standard_falloff, float cutoff, vec3 ambientLightColor, vec3 lightColor, float metallicity, float roughness, float ao, vec3 f0, vec3 f90, bool indoors, inout vec3 ambientBias)
@@ -113,17 +135,12 @@ vec3 perLightPBR(float alpha, vec3 diffuseColor, vec3 diffuseVertexColor, vec3 a
     float lightIncidence = dot(normalDir, lightDir);
     float baseIncidence = lightIncidence;
     
-    diffuseColor = to_linear(diffuseColor);
-    diffuseVertexColor = to_linear(diffuseVertexColor);
-    ambientColor = to_linear(ambientColor);
-    ambientLightColor = to_linear(ambientLightColor);
-    lightColor = to_linear(lightColor);
+    //return vec3(max(0.0, baseIncidence)*0.1);
     
     if (dot(lightColor, vec3(1.0/3.0)) < 0.0)
         ambientBias += lightColor * max(0.0, baseIncidence) * falloff;
     
     ambientLightColor = max(ambientLightColor, vec3(0.0));
-    ambientColor = max(ambientColor, vec3(0.0));
     lightColor = max(lightColor, vec3(0.0));
     falloff = max(falloff, 0.0);
     
@@ -164,7 +181,7 @@ vec3 perLightPBR(float alpha, vec3 diffuseColor, vec3 diffuseVertexColor, vec3 a
     baseIncidence *= clamp(-8.0 * (1.0 - 0.3) * eyeCosine + 1.0, 0.3, 1.0);
 #endif
 
-    // reduce specularity by plane normal to conserve energy
+    // reduce specularity by incidence against plane normal to conserve energy
     specular *= baseIncidence;
 
 #if DO_PBR
@@ -183,14 +200,15 @@ vec3 perLightPBR(float alpha, vec3 diffuseColor, vec3 diffuseVertexColor, vec3 a
         // fade out at end of bounding radius
         radius = radius*5.0;
         spec *= clamp((1.0 - lightDistance/radius)*5.0, 0.0, 1.0);
-        spec *= pow(cutoff, 0.1);
+        spec *= cutoff;
     }
     else
     {
         spec *= LIGHT_STRENGTH_SUN_SPECULAR;
     }
-    // apply part of ao to rough specularity, because rough specular light is sorta kinda like ambient light
-    spec *= mix(1.0, ao, roughness*0.5);
+    // FIXME (HACK) apply part of ao to rough specularity, because rough specular light is sorta kinda like ambient light
+    spec *= mix(1.0, ao, clamp(roughness*4.0-2.0, 0.0, 1.0)*0.5);
+    // now apply lighting
     light += diff;
     light += spec;
     light += diffuseColor * ambientColor * falloff * ao * ambientLightColor;
@@ -207,6 +225,15 @@ uniform mat4 osg_ViewMatrixInverse;
 
 vec3 doLightingPBR(float alpha, vec3 diffuseColor, vec3 diffuseVertexColor, vec3 ambientColor, vec3 emissiveColor, vec3 specularTint, vec3 viewPos, vec3 normal, float _shadowing, float metallicity, float roughness, float ao, float f0_scalar)
 {
+    diffuseColor = to_linear(diffuseColor);
+    diffuseVertexColor = to_linear(diffuseVertexColor);
+    ambientColor = to_linear(ambientColor);
+    emissiveColor = to_linear(emissiveColor);
+    
+    vec3 sunColor = to_linear(lcalcDiffuse(0) * LIGHT_STRENGTH_SUN);
+    vec3 ambientAdjust = to_linear(gl_LightModel.ambient.xyz * LIGHT_STRENGTH_AMBIENT);
+    
+    //return normal*0.5+0.5;
     #if DEBUG_SHOW_ROUGHNESS
         return vec3(roughness);
     #endif
@@ -222,8 +249,9 @@ vec3 doLightingPBR(float alpha, vec3 diffuseColor, vec3 diffuseVertexColor, vec3
     
     vec3 shadowing = vec3(_shadowing);
     vec3 light = vec3(0.0);
-    light += perLightPBR(alpha, diffuseColor, diffuseVertexColor, ambientColor, shadowing, normal, viewPos, lcalcPosition(0), 1.0, -1.0, 1.0, 1.0, 1.0, vec3(0.0), lcalcDiffuse(0) * LIGHT_STRENGTH_SUN, metallicity, roughness, ao, f0, f90, indoors, ambientBias);
-    light += to_linear(diffuseColor) * to_linear(emissiveColor);
+    
+    light += perLightPBR(alpha, diffuseColor, diffuseVertexColor, ambientColor, shadowing, normal, viewPos, lcalcPosition(0), 1.0, -1.0, 1.0, 1.0, 1.0, vec3(0.0), sunColor, metallicity, roughness, ao, f0, f90, indoors, ambientBias);
+    light += diffuseColor * emissiveColor;
 
     for (int _i = @startLight; _i < @endLight; ++_i)
     {
@@ -235,6 +263,20 @@ vec3 doLightingPBR(float alpha, vec3 diffuseColor, vec3 diffuseVertexColor, vec3
         float radius = lcalcRadius(i);
         vec3 lightPos = lcalcPosition(i) - viewPos;
         float lightDistance = length(lightPos);
+        
+// groundcover is too expensive to give the boosted cutoff
+#if DO_PBR
+#ifdef GROUNDCOVER
+        float cutoff = lcalcCutoff(i, lightDistance/PBR_LIGHT_BOUNDING_SPHERE_MULTIPLIER_GROUNDCOVER);
+#else
+        float cutoff = lcalcCutoff(i, lightDistance/PBR_LIGHT_BOUNDING_SPHERE_MULTIPLIER);
+#endif
+#else
+        float cutoff = lcalcCutoff(i, lightDistance);
+#endif
+        
+        if (cutoff == 0.0)
+            continue;
         
         float physical_falloff = 1.0/(PBR_FALLOFF_REF_DISTANCE*PBR_FALLOFF_REF_DISTANCE);
         float legacy_falloff = lcalcIlluminationNoCutoff(i, lightDistance);
@@ -249,21 +291,19 @@ vec3 doLightingPBR(float alpha, vec3 diffuseColor, vec3 diffuseVertexColor, vec3
         float falloff = legacy_falloff;
 #endif
 #endif
-#if DO_PBR
-        float cutoff = lcalcCutoff(i, lightDistance/PBR_LIGHT_BOUNDING_SPHERE_MULTIPLIER);
-#else
-        float cutoff = lcalcCutoff(i, lightDistance);
-#endif
         falloff *= cutoff;
         
         vec3 ambient = lcalcAmbient(i);
         vec3 diffuse = lcalcDiffuse(i);
         
-        light += perLightPBR(alpha, diffuseColor, diffuseVertexColor, ambientColor, vec3(1.0), normal, viewPos, lightPos, lightDistance, radius, falloff, standard_falloff, cutoff, ambient, diffuse * LIGHT_STRENGTH_POINT, metallicity, roughness, ao, f0, f90, indoors, ambientBias);
+        ambient = to_linear(ambient);
+        vec3 lightColor = to_linear(diffuse * LIGHT_STRENGTH_POINT);
+        
+        light += perLightPBR(alpha, diffuseColor, diffuseVertexColor, ambientColor, vec3(1.0), normal, viewPos, lightPos, lightDistance, radius, falloff, standard_falloff, cutoff, ambient, lightColor, metallicity, roughness, ao, f0, f90, indoors, ambientBias);
     }
     
-    vec3 ambientTerm = max(to_linear(ambientColor) + ambientBias, vec3(0.0));
-    light += to_linear(diffuseColor) * to_linear(gl_LightModel.ambient.xyz * LIGHT_STRENGTH_AMBIENT) * ambientTerm * ao;
+    vec3 ambientTerm = max(ambientColor + ambientBias, vec3(0.0));
+    light += diffuseColor * ambientAdjust * ambientTerm * ao;
     
     return to_srgb(light);
 }
@@ -271,7 +311,8 @@ vec3 doLightingPBR(float alpha, vec3 diffuseColor, vec3 diffuseVertexColor, vec3
 void fakePbrEstimate(vec3 color, out float metallicity, out float roughness, out float ao, out float f0_scalar)
 {
     metallicity = 0.0;
-    float color_v = max(0.0, dot(color, vec3(1.0/3.0))-0.4)*5.0;
+    float brightness = dot(color, vec3(1.0/3.0));
+    float color_v = max(0.0, brightness-0.4)*5.0;
     float color_part = color.b*4.0 - 0.5 + color.g*0.5 - color.r*0.25;
     float f = clamp(color_part - color_v, 0.0, 1.0);
     roughness = mix(PBR_AUTO_ROUGHNESS_MAX, PBR_AUTO_ROUGHNESS_MIN, f);
@@ -282,16 +323,19 @@ void fakePbrEstimate(vec3 color, out float metallicity, out float roughness, out
 void specMapToPBR(vec4 specTex, out float metallicity, out float roughness, out float ao, out float f0_scalar)
 {
     metallicity = specTex.r;
+    
     #if PBR_MAT_ROUGHNESS_INVERTED
-        roughness = clamp(1.0 - specTex.g, 0.02, 0.98);
+        roughness = clamp(1.0 - specTex.g, PBR_MAT_ROUGHNESS_FLOOR, 1.0);
     #else
-        roughness = clamp(specTex.g, 0.02, 0.98);
+        roughness = clamp(specTex.g, PBR_MAT_ROUGHNESS_FLOOR, 1.0);
     #endif
+    
     #if DO_PBR
         ao = 1.0;
     #else
         ao = specTex.b;
     #endif
+    
     f0_scalar = 0.04;
 }
 
