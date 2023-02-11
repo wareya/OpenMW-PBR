@@ -44,6 +44,9 @@
 // for groundcover (lower because expensive)
 // WARNING: affects performance a LOT.
 #define PBR_LIGHT_BOUNDING_SPHERE_MULTIPLIER_GROUNDCOVER 1.0
+// whether to use specular math for non-metallic ambience
+// (metallic ambience always uses specular math)
+#define PBR_SPECULAR_AMBIENT 0
 
 #if DO_PBR && !PBR_BYPASS
 // default 2.2, approximation of the sRGB gamma curve
@@ -226,42 +229,50 @@ vec3 ambientGuess(float height, vec3 ambientTerm, float roughness)
     float t = clamp(height/(roughness*roughness + 0.01), -1.0, 1.0);
     t = mix(t, 0.0, clamp(roughness*2.0-1.0, 0.0, 1.0));
     float gradient = mix(mix(0.2, 1.8, height*0.5+0.5), 1.0, roughness);
-    return mix(ambientTerm*(0.2 + roughness * 0.3), ambientTerm*1.5, t*0.5+0.5) * gradient;
+    return mix(ambientTerm*(0.3 + roughness * 0.2), ambientTerm*1.5, t*0.5+0.5) * gradient;
 }
 
 vec3 perAmbientPBR(vec3 diffuseColor, vec3 ambientColor, vec3 ambientBias, vec3 ambientAdjust, float ao, float metallicity, float roughness, vec3 normal, vec3 viewDir, vec3 f0, vec3 f90)
 {
     vec3 light = vec3(0.0);
     
-    vec3 ambientTerm = max(ambientColor + ambientBias, vec3(0.0));
+    vec3 origAmbientTerm = max(ambientColor + ambientBias, vec3(0.0));
+    
+    vec3 reflection = reflect(-viewDir, normal);
+    vec3 reflectionWorld = (osg_ViewMatrixInverse * vec4(reflection, 0.0)).xyz;
+    vec3 ambientTerm = origAmbientTerm;
+    
+#if !PBR_SPECULAR_AMBIENT
     light += diffuseColor * ambientAdjust * ambientTerm * ao * (1.0 - metallicity);
+#endif
+    
+    ambientTerm = ambientGuess(reflectionWorld.z, ambientTerm, roughness);
     
     // FIXME: HACK: evil, physically meaningless: ambient metallic specularity guesstimate
     // HERE BE DRAGONS
+#if !PBR_SPECULAR_AMBIENT
     if (metallicity > 0.0)
+#endif
     {
         // FIXME: HACK: if ambientColor is exactly black, make it light grey first
         // this fixes metallic armor in the inventory character preview
         if (ambientAdjust == vec3(0.0))
-            ambientAdjust = vec3(0.5);
-        // FIXME: HACK: inventory preview is rendered in the same space as the world, so the normals are pointing in the wrong direction
-        // so, make the fake horizon only happen if we don't think this is the inventory character preview
-        else
         {
-            vec3 reflection = reflect(-viewDir, normal);
-            vec3 reflectionWorld = (osg_ViewMatrixInverse * vec4(reflection, 0.0)).xyz;
-            ambientTerm = ambientGuess(reflectionWorld.z, ambientTerm, roughness);
+            ambientAdjust = vec3(0.5);
+            // FIXME: HACK: inventory preview is rendered in the same space as the world, so the normals are pointing in the wrong direction
+            // so, make the fake horizon only happen if we don't think this is the inventory character preview
+            ambientTerm = origAmbientTerm;
         }
         
-        float dot = max(dot(normal, viewDir), 0.0);
+        float vdot = max(dot(normal, viewDir), 0.0);
         
-        float dot_02 = pow(dot, 0.2);
-        float inv_2dot = max(0.0, 1.0 - dot*2.0);
+        float dot_02 = pow(vdot, 0.2);
+        float inv_2dot = max(0.0, 1.0 - vdot*2.0);
         float inv_2dot_2 = inv_2dot*inv_2dot;
         float dot_02_3 = dot_02*dot_02*dot_02;
-        float inv_roughness = 1.0 - roughness;
+        float inv_roughness = clamp(1.0 - roughness, 0.0, 1.0);
         float inv_roughness_2 = inv_roughness*inv_roughness;
-        float hack_f90 = clamp(((dot*7.0 - roughness + 0.05)/(dot+0.01) + 0.5)*0.2, 0.0, 1.0)*0.5 + 0.5;
+        float hack_f90 = clamp(((vdot*7.0 - roughness + 0.05)/(vdot+0.01) + 0.5)*0.2, 0.0, 1.0)*0.5 + 0.5;
         
         // extremely awful terible estimation of the environmental BRDF, non-hacky seen here:
         // https://google.github.io/filament/Filament.html#toc5.3.4.3
@@ -274,7 +285,12 @@ vec3 perAmbientPBR(vec3 diffuseColor, vec3 ambientColor, vec3 ambientBias, vec3 
         f0_part = f0_part*f0_part;
         float f90_part = mix(inv_2dot_2*inv_roughness_2, 0.0, 1.0 - inv_roughness_2) * hack_f90;
         
-        light += ambientAdjust * ambientTerm * (f0*f0_part + f90*f90_part) * metallicity;
+        light += ambientAdjust * ambientTerm * (f0_part + f90*f90_part) * metallicity;
+        
+#if PBR_SPECULAR_AMBIENT
+        float contrib = clamp(1.0 - mix(dot(f0*f0_part, vec3(1.0/3.0)) + f90_part, 1.0, metallicity), 0.0, 1.0);
+        light += diffuseColor * ambientAdjust * ambientTerm * ao * contrib;
+#endif
     }
     
     return light;
