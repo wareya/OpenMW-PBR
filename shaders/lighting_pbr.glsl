@@ -24,7 +24,7 @@
 // whether pbr specularoty materials have inverted roughness or not
 #define PBR_MAT_ROUGHNESS_INVERTED 0
 // prevent roughness from being less than this amount (reduces speckling on bad textures)
-#define PBR_MAT_ROUGHNESS_FLOOR 0.2
+#define PBR_MAT_ROUGHNESS_FLOOR 0.1
 // how many units away from the light is considered "standard" falloff
 // used to estimate how bright it should be in quadratic falloff
 // note: specularity always uses quadratic falloff
@@ -169,7 +169,7 @@ vec3 perLightPBR(float alpha, vec3 diffuseColor, vec3 diffuseVertexColor, vec3 a
 #ifndef GROUNDCOVER
     baseIncidence = max(baseIncidence, 0.0);
 #else
-    float eyeCosine = dot(-normalize(viewDir), normalDir);
+    float eyeCosine = dot(-viewDir, normalDir);
     if (baseIncidence < 0.0)
     {
         baseIncidence = -baseIncidence;
@@ -220,11 +220,15 @@ vec3 perLightPBR(float alpha, vec3 diffuseColor, vec3 diffuseVertexColor, vec3 a
 
 uniform mat4 osg_ViewMatrixInverse;
 
+// replace ambient with a quasi horizon-and-sky-and-ground reflection
 vec3 ambientGuess(float height, vec3 ambientTerm, float roughness)
 {
     //return ambientTerm;
     float t = clamp(height/(roughness*roughness*4.0 + 0.01), -1.0, 1.0);
-    return mix(ambientTerm*0.5, ambientTerm*1.5, t*0.5+0.5);
+    //t = 0.0;
+    float gradient = mix(mix(0.2, 1.8, height*0.5+0.5), 1.0, roughness);
+    //gradient = 1.0;
+    return mix(ambientTerm*(0.2 + roughness * 0.3), ambientTerm*1.5, t*0.5+0.5) * gradient;
     
     /*
     float e = mix(16.0, 0.1, roughness);
@@ -295,7 +299,7 @@ vec3 doLightingPBR(float alpha, vec3 diffuseColor, vec3 diffuseVertexColor, vec3
     vec3 shadowing = vec3(_shadowing);
     vec3 light = vec3(0.0);
     
-    light += perLightPBR(alpha, diffuseColor, diffuseVertexColor, ambientColor, shadowing, normal, viewPos, lcalcPosition(0), 1.0, -1.0, 1.0, 1.0, 1.0, vec3(0.0), sunColor, metallicity, roughness, ao, f0, f90, indoors, ambientBias);
+    light += perLightPBR(alpha, diffuseColor, diffuseVertexColor, ambientColor, shadowing, normal, viewDir, lcalcPosition(0), 1.0, -1.0, 1.0, 1.0, 1.0, vec3(0.0), sunColor, metallicity, roughness, ao, f0, f90, indoors, ambientBias);
     light += diffuseColor * emissiveColor;
 
     for (int _i = @startLight; _i < @endLight; ++_i)
@@ -347,16 +351,38 @@ vec3 doLightingPBR(float alpha, vec3 diffuseColor, vec3 diffuseVertexColor, vec3
         light += perLightPBR(alpha, diffuseColor, diffuseVertexColor, ambientColor, vec3(1.0), normal, viewDir, lightPos, lightDistance, radius, falloff, standard_falloff, cutoff, ambient, lightColor, metallicity, roughness, ao, f0, f90, indoors, ambientBias);
     }
     
+    roughness = 0.5;
+    
     vec3 ambientTerm = max(ambientColor + ambientBias, vec3(0.0));
     light += diffuseColor * ambientAdjust * ambientTerm * ao * (1.0 - metallicity);
     
-    // FIXME: evil, ugly, physically meaningless hack for specular ambience
-    ambientTerm = ambientGuess(normalWorld.z, ambientTerm, roughness);
-    vec3 ambientLightDir = normal;//reflect(-viewDir, normal);
-    vec3 fresnel = fresnelSchlick(max(dot(normal, viewDir), 0.0), f0, f90);
-    fresnel = mix(fresnel, f0, roughness*roughness);
-    float specular = 1.0;
-    light += ambientAdjust * ambientTerm * ao * metallicity * fresnel * specular;
+    
+    // FIXME: HACK: evil, physically meaningless: ambient metallic specularity guesstimate
+    // HERE BE DRAGONS
+    if (metallicity > 0.0)
+    {
+        // FIXME: HACK: if ambientColor is exactly black, make it light grey first
+        // this fixes metallic armor in the inventory character preview
+        if (ambientAdjust == vec3(0.0))
+            ambientAdjust = vec3(0.5);
+        // FIXME: HACK: inventory preview is rendered in the same space as the world, so the normals are pointing in the wrong direction
+        // so, make the fake horizon only happen if we don't think this is the inventory character preview
+        else
+            ambientTerm = ambientGuess(normalWorld.z, ambientTerm, roughness);
+        
+        float dot = max(dot(normal, viewDir), 0.0);
+        float dot_02 = pow(dot, 0.2);
+        float inv_roughness = 1.0 - roughness;
+        float hack_f90 = clamp(dot*6.0 - roughness, 0.0, 1.0);
+        
+        // extremely awful terible estimation of the environmental BRDF from here:
+        // https://learnopengl.com/PBR/IBL/Specular-IBL
+        // red is f0, green is f90
+        float f0_part = mix(dot_02, 0.5, roughness);
+        float f90_part = mix(1.0-dot_02, 0.0, 1.0 - inv_roughness*inv_roughness) * (hack_f90*0.5+0.5);
+        
+        light += ambientAdjust * ambientTerm * (f0*f0_part + f90*f90_part) * metallicity;
+    }
     
     return to_srgb(light);
 }
