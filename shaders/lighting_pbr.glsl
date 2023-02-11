@@ -21,7 +21,7 @@
 // how to interpret color texture to automatically generate roughness
 #define PBR_AUTO_ROUGHNESS_MIN 0.35
 #define PBR_AUTO_ROUGHNESS_MAX 0.9
-// whether pbr specularoty materials have inverted roughness or not
+// whether pbr specularity materials have inverted roughness or not
 #define PBR_MAT_ROUGHNESS_INVERTED 0
 // prevent roughness from being less than this amount (reduces speckling on bad textures)
 #define PBR_MAT_ROUGHNESS_FLOOR 0.1
@@ -46,6 +46,7 @@
 #define PBR_LIGHT_BOUNDING_SPHERE_MULTIPLIER_GROUNDCOVER 1.0
 // whether to use specular math for non-metallic ambience
 // (metallic ambience always uses specular math)
+// looks bad because vanilla models have bad vertex normals
 #define PBR_SPECULAR_AMBIENT 0
 
 #if DO_PBR && !PBR_BYPASS
@@ -242,10 +243,11 @@ vec3 perAmbientPBR(vec3 diffuseColor, vec3 ambientColor, vec3 ambientBias, vec3 
     vec3 reflectionWorld = (osg_ViewMatrixInverse * vec4(reflection, 0.0)).xyz;
     vec3 ambientTerm = origAmbientTerm;
     
-#if !PBR_SPECULAR_AMBIENT
+#if !PBR_SPECULAR_AMBIENT || !DO_PBR
     light += diffuseColor * ambientAdjust * ambientTerm * ao * (1.0 - metallicity);
 #endif
-    
+
+#if DO_PBR
     ambientTerm = ambientGuess(reflectionWorld.z, ambientTerm, roughness);
     
     // FIXME: HACK: evil, physically meaningless: ambient metallic specularity guesstimate
@@ -285,19 +287,26 @@ vec3 perAmbientPBR(vec3 diffuseColor, vec3 ambientColor, vec3 ambientBias, vec3 
         f0_part = f0_part*f0_part;
         float f90_part = mix(inv_2dot_2*inv_roughness_2, 0.0, 1.0 - inv_roughness_2) * hack_f90;
         
-        light += ambientAdjust * ambientTerm * (f0_part + f90*f90_part) * metallicity;
+        light += ambientAdjust * ambientTerm * (f0*f0_part + f90*f90_part) * metallicity;
         
 #if PBR_SPECULAR_AMBIENT
         float contrib = clamp(1.0 - mix(dot(f0*f0_part, vec3(1.0/3.0)) + f90_part, 1.0, metallicity), 0.0, 1.0);
         light += diffuseColor * ambientAdjust * ambientTerm * ao * contrib;
 #endif
     }
+
+#endif // DO_PBR
     
     return light;
 }
 
 vec3 doLightingPBR(float alpha, vec3 diffuseColor, vec3 diffuseVertexColor, vec3 ambientColor, vec3 emissiveColor, vec3 specularTint, vec3 viewPos, vec3 normal, float _shadowing, float metallicity, float roughness, float ao, float f0_scalar)
 {
+#if !DO_PBR
+    metallicity = 0.0;
+    ao = 1.0;
+#endif
+    
     diffuseColor = to_linear(diffuseColor);
     diffuseVertexColor = to_linear(diffuseVertexColor);
     ambientColor = to_linear(ambientColor);
