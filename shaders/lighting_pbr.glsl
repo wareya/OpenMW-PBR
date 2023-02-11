@@ -248,8 +248,9 @@ vec3 perAmbientPBR(vec3 diffuseColor, vec3 ambientColor, vec3 ambientBias, vec3 
         // so, make the fake horizon only happen if we don't think this is the inventory character preview
         else
         {
-            vec3 normalWorld = (osg_ViewMatrixInverse * vec4(normal, 0.0)).xyz;
-            ambientTerm = ambientGuess(normalWorld.z, ambientTerm, roughness);
+            vec3 reflection = reflect(-viewDir, normal);
+            vec3 reflectionWorld = (osg_ViewMatrixInverse * vec4(reflection, 0.0)).xyz;
+            ambientTerm = ambientGuess(reflectionWorld.z, ambientTerm, roughness);
         }
         
         float dot = max(dot(normal, viewDir), 0.0);
