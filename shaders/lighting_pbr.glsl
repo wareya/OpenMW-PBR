@@ -123,11 +123,10 @@ vec3 to_srgb(vec3 color)
     return fast_sign(color) * pow(abs(color), vec3(1.0/GAMMA));
 }
 
-vec3 perLightPBR(float alpha, vec3 diffuseColor, vec3 diffuseVertexColor, vec3 ambientColor, vec3 shadowing, vec3 normal, vec3 viewPos, vec3 lightPos, float lightDistance, float radius, float falloff, float standard_falloff, float cutoff, vec3 ambientLightColor, vec3 lightColor, float metallicity, float roughness, float ao, vec3 f0, vec3 f90, bool indoors, inout vec3 ambientBias)
+vec3 perLightPBR(float alpha, vec3 diffuseColor, vec3 diffuseVertexColor, vec3 ambientColor, vec3 shadowing, vec3 normal, vec3 viewDir, vec3 lightPos, float lightDistance, float radius, float falloff, float standard_falloff, float cutoff, vec3 ambientLightColor, vec3 lightColor, float metallicity, float roughness, float ao, vec3 f0, vec3 f90, bool indoors, inout vec3 ambientBias)
 {
     vec3 light = vec3(0.0);
 
-    vec3 viewDir = -normalize(viewPos);
     vec3 lightDir = normalize(lightPos);
     vec3 normalDir = normal;
     vec3 halfDir = normalize(viewDir + lightDir);
@@ -158,9 +157,7 @@ vec3 perLightPBR(float alpha, vec3 diffuseColor, vec3 diffuseVertexColor, vec3 a
         lightColor *= shadowing;
         diffuseColor *= diffuseVertexColor;
     }
-        
-    f0  = mix(f0 , diffuseColor, metallicity);
-    f90 = mix(f90, diffuseColor, metallicity); // FIXME: ????
+    
 #if !PBR_NO_SPECULAR
     vec3 fresnel = fresnelSchlick(max(dot(halfDir, viewDir), 0.0), f0, f90);
     float specular = BRDF(normalDir, viewDir, lightDir, halfDir, roughness);
@@ -223,12 +220,58 @@ vec3 perLightPBR(float alpha, vec3 diffuseColor, vec3 diffuseVertexColor, vec3 a
 
 uniform mat4 osg_ViewMatrixInverse;
 
+vec3 ambientGuess(float height, vec3 ambientTerm, float roughness)
+{
+    //return ambientTerm;
+    float t = clamp(height/(roughness*roughness*4.0 + 0.01), -1.0, 1.0);
+    return mix(ambientTerm*0.5, ambientTerm*1.5, t*0.5+0.5);
+    
+    /*
+    float e = mix(16.0, 0.1, roughness);
+    float o = roughness + 0.1;
+    
+    float point_a = -1.0;
+    float point_b = -0.1;
+    float point_c =  0.1;
+    float point_d =  1.0;
+    
+    vec3 c_a = ambientTerm*0.25;
+    vec3 c_b = ambientTerm*0.5;
+    vec3 c_c = ambientTerm*1.5;
+    vec3 c_d = ambientTerm*2.0;
+    
+    float w_temp = 0.0;
+    float w = 0.0;
+    vec3 c = vec3(0.0);
+    
+    w_temp = 1.0/pow(abs(height-point_a) + o, e);
+    w += w_temp;
+    c += c_a * w_temp;
+    
+    w_temp = 1.0/pow(abs(height-point_b) + o, e);
+    w += w_temp;
+    c += c_b * w_temp;
+    
+    w_temp = 1.0/pow(abs(height-point_c) + o, e);
+    w += w_temp;
+    c += c_c * w_temp;
+    
+    w_temp = 1.0/pow(abs(height-point_d) + o, e);
+    w += w_temp;
+    c += c_d * w_temp;
+    
+    return c/w;
+    */
+}
+
 vec3 doLightingPBR(float alpha, vec3 diffuseColor, vec3 diffuseVertexColor, vec3 ambientColor, vec3 emissiveColor, vec3 specularTint, vec3 viewPos, vec3 normal, float _shadowing, float metallicity, float roughness, float ao, float f0_scalar)
 {
     diffuseColor = to_linear(diffuseColor);
     diffuseVertexColor = to_linear(diffuseVertexColor);
     ambientColor = to_linear(ambientColor);
     emissiveColor = to_linear(emissiveColor);
+    
+    vec3 viewDir = -normalize(viewPos);
     
     vec3 sunColor = to_linear(lcalcDiffuse(0) * LIGHT_STRENGTH_SUN);
     vec3 ambientAdjust = to_linear(gl_LightModel.ambient.xyz * LIGHT_STRENGTH_AMBIENT);
@@ -239,9 +282,11 @@ vec3 doLightingPBR(float alpha, vec3 diffuseColor, vec3 diffuseVertexColor, vec3
     #endif
     // indoors detection hack
     bool indoors = normalize((osg_ViewMatrixInverse * vec4(normalize(lcalcPosition(0)), 0.0)).xyz).y > 0.0;
+    vec3 normalWorld = (osg_ViewMatrixInverse * vec4(normal, 0.0)).xyz;
     
     vec3 f90 = vec3(1.0) + specularTint;
     vec3 f0 = vec3(f0_scalar) * f90;
+    f0 = mix(f0, diffuseColor, metallicity);
     
     diffuseVertexColor = mix(diffuseVertexColor, vec3(1.0), VERTEX_COLOR_ADJUST);
     
@@ -299,11 +344,19 @@ vec3 doLightingPBR(float alpha, vec3 diffuseColor, vec3 diffuseVertexColor, vec3
         ambient = to_linear(ambient);
         vec3 lightColor = to_linear(diffuse * LIGHT_STRENGTH_POINT);
         
-        light += perLightPBR(alpha, diffuseColor, diffuseVertexColor, ambientColor, vec3(1.0), normal, viewPos, lightPos, lightDistance, radius, falloff, standard_falloff, cutoff, ambient, lightColor, metallicity, roughness, ao, f0, f90, indoors, ambientBias);
+        light += perLightPBR(alpha, diffuseColor, diffuseVertexColor, ambientColor, vec3(1.0), normal, viewDir, lightPos, lightDistance, radius, falloff, standard_falloff, cutoff, ambient, lightColor, metallicity, roughness, ao, f0, f90, indoors, ambientBias);
     }
     
     vec3 ambientTerm = max(ambientColor + ambientBias, vec3(0.0));
-    light += diffuseColor * ambientAdjust * ambientTerm * ao;
+    light += diffuseColor * ambientAdjust * ambientTerm * ao * (1.0 - metallicity);
+    
+    // FIXME: evil, ugly, physically meaningless hack for specular ambience
+    ambientTerm = ambientGuess(normalWorld.z, ambientTerm, roughness);
+    vec3 ambientLightDir = normal;//reflect(-viewDir, normal);
+    vec3 fresnel = fresnelSchlick(max(dot(normal, viewDir), 0.0), f0, f90);
+    fresnel = mix(fresnel, f0, roughness*roughness);
+    float specular = 1.0;
+    light += ambientAdjust * ambientTerm * ao * metallicity * fresnel * specular;
     
     return to_srgb(light);
 }
