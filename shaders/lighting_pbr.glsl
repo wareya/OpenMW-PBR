@@ -17,6 +17,8 @@
 
 #define PBR_NO_SPECULAR 0
 // interpret vertex color as shadowing instead of diffuse for sun or indoors
+// the main use of vertex colors in MW assets is as a GI approximation
+// this hack makes vertex colors affect light instead of diffuse
 #define PBR_VERTEX_COLOR_HACK 1
 // how to interpret color texture to automatically generate roughness
 #define PBR_AUTO_ROUGHNESS_MIN 0.35
@@ -29,14 +31,13 @@
 // used to estimate how bright it should be in quadratic falloff
 // note: specularity always uses quadratic falloff
 #define PBR_FALLOFF_REF_DISTANCE 70.0
-#define PBR_QUADRATIC_BOOST 1.0
 // force quadratic light falloff (only looks right with gamma values near 2.2)
-// the main use of vertex colors in MW assets is as a GI approximation
-// this hack makes vertex colors affect light instead of diffuse
 #define PBR_FORCE_QUADRATIC_FALLOFF 0
 // prevent quadratic light from being infinite at zero distance
 #define PBR_FORCE_QUADRATIC_FALLOFF_CONSTANT 4.0
-// whether to reinterpret falloff as being gamma-compressed (recommended: on)
+// general boost for quadratic falloff
+#define PBR_QUADRATIC_BOOST 1.0
+// whether to reinterpret non-quadratic falloff as being gamma-compressed (recommended: on)
 #define PBR_COMPRESSED_FALLOFF 1
 // match with the light bounding sphere setting under your video options, or lower for better performance
 // WARNING: affects performance a LOT. set to 1.0 for a performance boost
