@@ -92,35 +92,13 @@ varying vec3 passNormal;
 #include "softparticles.glsl"
 #endif
 
-#if @particleOcclusion
-uniform sampler2D orthoDepthMap;
-
-varying vec3 orthoDepthMapCoord;
-
-void precipitationOcclusion()
-{
-    float sceneDepth = texture2D(orthoDepthMap, orthoDepthMapCoord.xy * 0.5 + 0.5).r;
-#if @reverseZ
-    if (orthoDepthMapCoord.z < sceneDepth)
-        discard;
-#else
-    if (orthoDepthMapCoord.z * 0.5 + 0.5 > sceneDepth)
-        discard;
-#endif
-}
-#endif
-
 void main()
 {
-#if @particleOcclusion
-    precipitationOcclusion();
-#endif
-
 #if @diffuseMap
     vec2 adjustedDiffuseUV = diffuseMapUV;
 #endif
 
-    vec3 normal = normalize(passNormal);
+    vec3 worldNormal = normalize(passNormal);
     vec3 viewVec = normalize(passViewPos.xyz);
 
 #if @normalMap
@@ -131,12 +109,17 @@ void main()
     normalTex.xyz = normalTex.xyz * 0.5 + 0.5;
 #endif
 
-    vec3 normalizedNormal = normal;
+    vec3 normalizedNormal = worldNormal;
     vec3 normalizedTangent = normalize(passTangent.xyz);
     vec3 binormal = cross(normalizedTangent, normalizedNormal) * passTangent.w;
     mat3 tbnTranspose = mat3(normalizedTangent, binormal, normalizedNormal);
 
-    normal = normalize(tbnTranspose * (normalTex.xyz * 2.0 - 1.0));
+    worldNormal = normalize(tbnTranspose * (normalTex.xyz * 2.0 - 1.0));
+    vec3 viewNormal = gl_NormalMatrix * worldNormal;
+#endif
+
+#if (!@normalMap && (@parallax || @forcePPL || @softParticles))
+    vec3 viewNormal = gl_NormalMatrix * worldNormal;
 #endif
 
 #if @parallax
@@ -157,12 +140,11 @@ void main()
     normalTex.xyz = normalTex.xyz * 0.5 + 0.5;
 #endif
 
-    normal = normalize(tbnTranspose * (normalTex.xyz * 2.0 - 1.0));
+    worldNormal = normalize(tbnTranspose * (normalTex.xyz * 2.0 - 1.0));
+    viewNormal = gl_NormalMatrix * worldNormal;
 #endif
 
 #endif
-
-vec3 viewNormal = normalize(gl_NormalMatrix * normal);
 
 #if @diffuseMap
     gl_FragData[0] = texture2D(diffuseMap, adjustedDiffuseUV);
@@ -229,7 +211,7 @@ vec3 viewNormal = normalize(gl_NormalMatrix * normal);
     lighting = passLighting + shadowDiffuseLighting * shadowing;
 #else
     vec3 diffuseLight, ambientLight;
-    doLighting(passViewPos, viewNormal, shadowing, diffuseLight, ambientLight);
+    doLighting(passViewPos, normalize(viewNormal), shadowing, diffuseLight, ambientLight);
     vec3 emission = getEmissionColor().xyz * emissiveMult;
     lighting = diffuseColor.xyz * diffuseLight + getAmbientColor().xyz * ambientLight + emission;
 #endif
@@ -280,7 +262,10 @@ vec3 viewNormal = normalize(gl_NormalMatrix * normal);
     matSpec *= specStrength;
     if (matSpec != vec3(0.0))
     {
-        gl_FragData[0].xyz += getSpecular(viewNormal, viewVec, shininess, matSpec) * shadowing;
+#if (!@normalMap && !@parallax && !@forcePPL)
+        vec3 viewNormal = gl_NormalMatrix * worldNormal;
+#endif
+        gl_FragData[0].xyz += getSpecular(normalize(viewNormal), viewVec, shininess, matSpec) * shadowing;
     }
 
 #endif
@@ -297,7 +282,7 @@ vec3 viewNormal = normalize(gl_NormalMatrix * normal);
 #endif
 
 #if !defined(FORCE_OPAQUE) && !@disableNormals
-    gl_FragData[1].xyz = viewNormal * 0.5 + 0.5;
+    gl_FragData[1].xyz = worldNormal * 0.5 + 0.5;
 #endif
 
     applyShadowDebugOverlay();

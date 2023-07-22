@@ -24,7 +24,7 @@ varying vec4 passTangent;
 // Other shaders respect forcePPL, but legacy groundcover mods were designed to work with vertex lighting.
 // They may do not look as intended with per-pixel lighting, so ignore this setting for now.
 //#define PER_PIXEL_LIGHTING @normalMap
-// Need per-pixel lighting to do PBR, and it doesn't look THAT wrong
+// No; we need per-pixel lighting to do PBR
 #define PER_PIXEL_LIGHTING (@normalMap || @forcePPL)
 
 varying float euclideanDepth;
@@ -47,7 +47,7 @@ varying vec3 passNormal;
 
 void main()
 {
-    vec3 normal = normalize(passNormal);
+    vec3 worldNormal = normalize(passNormal);
 
 #if @normalMap
     vec4 normalTex = texture2D(normalMap, normalMapUV);
@@ -57,14 +57,14 @@ void main()
     normalTex.xyz = normalTex.xyz * 0.5 + 0.5;
 #endif
 
-    vec3 normalizedNormal = normal;
+    vec3 normalizedNormal = worldNormal;
     vec3 normalizedTangent = normalize(passTangent.xyz);
     vec3 binormal = cross(normalizedTangent, normalizedNormal) * passTangent.w;
     mat3 tbnTranspose = mat3(normalizedTangent, binormal, normalizedNormal);
 
-    normal = normalize(tbnTranspose * (normalTex.xyz * 2.0 - 1.0));
+    worldNormal = normalize(tbnTranspose * (normalTex.xyz * 2.0 - 1.0));
 #endif
-    vec3 viewNormal = normalize(gl_NormalMatrix * normal);
+    vec3 viewNormal = normalize(gl_NormalMatrix * worldNormal);
 
 #if @diffuseMap
     gl_FragData[0] = texture2D(diffuseMap, diffuseMapUV);
@@ -111,7 +111,7 @@ void main()
     gl_FragData[0] = applyFogAtDist(gl_FragData[0], euclideanDepth, linearDepth);
 
 #if !@disableNormals
-    gl_FragData[1].xyz = viewNormal * 0.5 + 0.5;
+    gl_FragData[1].xyz = worldNormal * 0.5 + 0.5;
 #endif
 
     applyShadowDebugOverlay();

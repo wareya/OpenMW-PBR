@@ -46,7 +46,7 @@ void main()
 {
     vec2 adjustedUV = (gl_TextureMatrix[0] * vec4(uv, 0.0, 1.0)).xy;
 
-    vec3 normal = normalize(passNormal);
+    vec3 worldNormal = normalize(passNormal);
 
 #if @normalMap
     vec4 normalTex = texture2D(normalMap, adjustedUV);
@@ -56,13 +56,19 @@ void main()
     normalTex.xyz = normalTex.xyz * 0.5 + 0.5;
 #endif
 
-    vec3 normalizedNormal = normal;
+    vec3 normalizedNormal = worldNormal;
     vec3 tangent = vec3(1.0, 0.0, 0.0);
     vec3 binormal = normalize(cross(tangent, normalizedNormal));
     tangent = normalize(cross(normalizedNormal, binormal)); // note, now we need to re-cross to derive tangent again because it wasn't orthonormal
     mat3 tbnTranspose = mat3(tangent, binormal, normalizedNormal);
 
-    normal = tbnTranspose * (normalTex.xyz * 2.0 - 1.0);
+    worldNormal = tbnTranspose * (normalTex.xyz * 2.0 - 1.0);
+    vec3 viewNormal = normalize(gl_NormalMatrix * worldNormal);
+    normalize(worldNormal);
+#endif
+
+#if (!@normalMap && (@parallax || @forcePPL))
+    vec3 viewNormal = gl_NormalMatrix * worldNormal;
 #endif
 
 #if @parallax
@@ -79,10 +85,10 @@ void main()
     normalTex.xyz = normalTex.xyz * 0.5 + 0.5;
 #endif
 
-    normal = tbnTranspose * (normalTex.xyz * 2.0 - 1.0);
+    worldNormal = tbnTranspose * (normalTex.xyz * 2.0 - 1.0);
+    viewNormal = normalize(gl_NormalMatrix * worldNormal);
+    normalize(worldNormal);
 #endif
-
-    vec3 viewNormal = normalize(gl_NormalMatrix * normal);
 
     vec4 diffuseTex = texture2D(diffuseMap, adjustedUV);
     gl_FragData[0] = vec4(diffuseTex.xyz, 1.0);
@@ -104,7 +110,7 @@ void main()
     lighting = passLighting + shadowDiffuseLighting * shadowing;
 #else
     vec3 diffuseLight, ambientLight;
-    doLighting(passViewPos, viewNormal, shadowing, diffuseLight, ambientLight);
+    doLighting(passViewPos, normalize(viewNormal), shadowing, diffuseLight, ambientLight);
     lighting = diffuseColor.xyz * diffuseLight + getAmbientColor().xyz * ambientLight + getEmissionColor().xyz;
 #endif
 
@@ -145,15 +151,17 @@ void main()
 
     if (matSpec != vec3(0.0))
     {
-        gl_FragData[0].xyz += getSpecular(viewNormal, normalize(passViewPos), shininess, matSpec) * shadowing;
+#if (!@normalMap && !@parallax && !@forcePPL)
+        vec3 viewNormal = gl_NormalMatrix * worldNormal;
+#endif
+        gl_FragData[0].xyz += getSpecular(normalize(viewNormal), normalize(passViewPos), shininess, matSpec) * shadowing;
     }
-
 #endif
 
     gl_FragData[0] = applyFogAtDist(gl_FragData[0], euclideanDepth, linearDepth);
 
 #if !@disableNormals && @writeNormals
-    gl_FragData[1].xyz = viewNormal * 0.5 + 0.5;
+    gl_FragData[1].xyz = worldNormal.xyz * 0.5 + 0.5;
 #endif
 
     applyShadowDebugOverlay();
