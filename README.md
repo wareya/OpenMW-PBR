@@ -2,9 +2,9 @@ This repository is not associated with OpenMW
 
 # Wareya's PBR shaders for OpenMW
 
-Based on OpenMW commit 613453c799cd493a16a2e6c56552cfee1e346dfb.
+Based on OpenMW commit e4c70b7861.
 
-Very basic minimally invasive PBR shaders for OpenMW 0.49 dev builds. Based on revision 613453c799. Don't install unless you know what you're doing. Configuration is in lighting_pbr.glsl. Implements basic lambert diffuse lighting and schlick-ggx specular lighting. Lighting math is done in (approximately) linear light.
+Very basic minimally invasive PBR shaders for OpenMW 0.49 dev builds. Based on revision e4c70b7861. Don't install unless you know what you're doing. Configuration is in lighting_pbr.glsl. Implements basic lambert diffuse lighting and schlick-ggx specular lighting. Lighting math is done in (approximately) linear light.
 
 These shaders attempt to automatically generate roughness data if there's no PBR specularity material available. To disable this, set `PBR_AUTO_ROUGHNESS_MIN` and `PBR_AUTO_ROUGHNESS_MAX` to the same value (0.75 for example).
 
