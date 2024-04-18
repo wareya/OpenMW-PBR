@@ -15,6 +15,7 @@ Programmers
     Nicolay Korslund - Project leader 2008-2010
     scrawl - Top contributor
 
+    AbduSharif
     Adam Hogan (aurix)
     Aesylwinn
     aegis
@@ -54,13 +55,15 @@ Programmers
     Cédric Mocquillon
     Chris Boyce (slothlife)
     Chris Robinson (KittyCat)
+    Chris Vigil
     Cody Glassman (Wazabear)
     Coleman Smith (olcoal)
     Cory F. Cohen (cfcohen)
     Cris Mihalache (Mirceam)
     crussell187
-    DanielVukelich
+    Dan Vukelich (sanchezman)
     darkf
+    Dave Corley (S3ctor)
     David Cernat (davidcernat)
     Declan Millar (declan-millar)
     devnexen
@@ -77,6 +80,7 @@ Programmers
     Eduard Cot (trombonecot)
     Eli2
     Emanuel Guével (potatoesmaster)
+    Epoch
     Eris Caffee (eris)
     eroen
     escondida
@@ -138,6 +142,7 @@ Programmers
     Lordrea
     Łukasz Gołębiewski (lukago)
     Lukasz Gromanowski (lgro)
+    Mads Sandvei (Foal)
     Marc Bouvier (CramitDeFrog)
     Marcin Hulist (Gohan)
     Mark Siewert (mark76)
@@ -159,6 +164,7 @@ Programmers
     Miroslav Puda (pakanek)
     MiroslavR
     Mitchell Schwitzer (schwitzerm)
+    Mitten.O
     naclander
     Narmo
     Nat Meo (Utopium)
@@ -183,6 +189,7 @@ Programmers
     pkubik
     PLkolek
     PlutonicOverkill
+    Qlonever
     Radu-Marius Popovici (rpopovici)
     Rafael Moura (dhustkoder)
     Randy Davin (Kindi)
@@ -202,6 +209,7 @@ Programmers
     Sergey Shambir (sergey-shambir)
     sergoz
     ShadowRadiance
+    Shihan42
     Siimacore
     Simon Meulenbeek (simonmb)
     sir_herrbatka
@@ -223,7 +231,7 @@ Programmers
     tlmullis
     tri4ng1e
     Thoronador
-    Tobias Tribble (zackogenic)
+    Tobias Tribble (zackhasacat)
     Tom Lowe (Vulpen)
     Tom Mason (wheybags)
     Torben Leif Carrington (TorbenC)
@@ -240,6 +248,7 @@ Programmers
     xyzz
     Yohaulticetl
     Yuri Krupenin
+    Yury Stepovikov
     zelurker
 
 Documentation
