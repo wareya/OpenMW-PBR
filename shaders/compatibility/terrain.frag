@@ -40,6 +40,7 @@ uniform float far;
 #include "vertexcolors.glsl"
 #include "shadows_fragment.glsl"
 #include "lib/light/lighting.glsl"
+#include "lib/light/lighting_pbr.glsl"
 #include "lib/material/parallax.glsl"
 #include "fog.glsl"
 #include "compatibility/normals.glsl"
@@ -73,6 +74,9 @@ void main()
 #endif
 
     float shadowing = unshadowedLightRatio(linearDepth);
+
+#if PBR_BYPASS
+
     vec3 lighting, specular;
 #if !PER_PIXEL_LIGHTING
     lighting = passLighting + shadowDiffuseLighting * shadowing;
@@ -93,6 +97,27 @@ void main()
 
     clampLightingResult(lighting);
     gl_FragData[0].xyz = gl_FragData[0].xyz * lighting + specular;
+
+#else // PBR_BYPASS
+
+    vec3 color = gl_FragData[0].xyz;
+    float metallicity = 0.0;
+    float roughness = 1.0;
+    float ao = 1.0;
+    float f0 = 0.04;
+#if @specularMap
+    vec4 specTex = vec4(0.0, diffuseTex.a, 1.0, 1.0);
+    specMapToPBR(specTex, metallicity, roughness, ao, f0);
+#else
+    fakePbrEstimate(color, metallicity, roughness, ao, f0);
+#endif
+    //roughness = mix(roughness, 0.0, gl_FrontMaterial.shininess);
+    
+    float a = 1.0;
+    gl_FragData[0].xyz = doLightingPBR(a, gl_FragData[0].xyz, diffuseColor.xyz, getAmbientColor().xyz, getEmissionColor().xyz, getSpecularColor().xyz, passViewPos, viewNormal, shadowing, metallicity, roughness, ao, f0);
+
+#endif // PBR_BYPASS
+
 
     gl_FragData[0] = applyFogAtDist(gl_FragData[0], euclideanDepth, linearDepth, far);
 

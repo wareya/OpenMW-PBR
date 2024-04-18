@@ -90,6 +90,7 @@ varying vec4 passTangent;
 #endif
 
 #include "lib/light/lighting.glsl"
+#include "lib/light/lighting_pbr.glsl"
 #include "lib/material/parallax.glsl"
 #include "lib/material/alpha.glsl"
 #include "lib/util/distortion.glsl"
@@ -218,6 +219,9 @@ vec2 screenCoords = gl_FragCoord.xy / screenRes;
 #endif
 
     float shadowing = unshadowedLightRatio(-passViewPos.z);
+
+#if PBR_BYPASS
+
     vec3 lighting, specular;
 #if !PER_PIXEL_LIGHTING
     lighting = passLighting + shadowDiffuseLighting * shadowing;
@@ -239,6 +243,26 @@ vec2 screenCoords = gl_FragCoord.xy / screenRes;
 
     clampLightingResult(lighting);
     gl_FragData[0].xyz = gl_FragData[0].xyz * lighting + specular;
+
+#else // PBR_BYPASS
+
+    vec3 color = gl_FragData[0].xyz;
+    float metallicity = 0.0;
+    float roughness = 1.0;
+    float ao = 1.0;
+    float f0 = 0.04;
+#if @specularMap
+    vec4 specTex = texture2D(specularMap, (SPECMAP_USE_DIFFUSE_UV != 0) ? diffuseMapUV + offset : specularMapUV);
+    specMapToPBR(specTex, metallicity, roughness, ao, f0);
+#else
+    fakePbrEstimate(color, metallicity, roughness, ao, f0);
+#endif
+    //roughness = mix(roughness, 0.0, gl_FrontMaterial.shininess);
+    
+    float a = gl_FragData[0].a;
+    gl_FragData[0].xyz = doLightingPBR(a, gl_FragData[0].xyz, diffuseColor.xyz, getAmbientColor().xyz, getEmissionColor().xyz, getSpecularColor().xyz, passViewPos, viewNormal, shadowing, metallicity, roughness, ao, f0);
+
+#endif // PBR_BYPASS
 
 #if @envMap && !@preLightEnv
     gl_FragData[0].xyz += envEffect;
