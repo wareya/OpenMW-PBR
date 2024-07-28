@@ -143,7 +143,7 @@ vec2 screenCoords = gl_FragCoord.xy / screenRes;
     gl_FragData[0] = texture2D(diffuseMap, diffuseMapUV + offset);
 
 #if defined(DISTORTION) && DISTORTION
-    gl_FragData[0].a = getDiffuseColor().a;
+    gl_FragData[0].a *= getDiffuseColor().a;
     gl_FragData[0] = applyDistortion(gl_FragData[0], distortionStrength, gl_FragCoord.z, texture2D(opaqueDepthTex, screenCoords / @distorionRTRatio).x);
     return;
 #endif
@@ -169,10 +169,11 @@ vec2 screenCoords = gl_FragCoord.xy / screenRes;
 
 #if @normalMap
     vec4 normalTex = texture2D(normalMap, normalMapUV + offset);
+    vec3 normal = normalTex.xyz * 2.0 - 1.0;
 #if @reconstructNormalZ
-    normalTex.z = sqrt(1.0 - dot(normalTex.xy, normalTex.xy));
+    normal.z = sqrt(1.0 - dot(normal.xy, normal.xy));
 #endif
-    vec3 viewNormal = normalToView(normalTex.xyz * 2.0 - 1.0);
+    vec3 viewNormal = normalToView(normal);
 #else
     vec3 viewNormal = normalize(gl_NormalMatrix * passNormal);
 #endif
