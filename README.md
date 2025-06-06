@@ -2,13 +2,13 @@ This repository is not associated with OpenMW
 
 # Wareya's PBR shaders for OpenMW
 
-Based on OpenMW commit e4c70b7861.
+Based on OpenMW commit 55107e0913.
 
 ![openmw_2024-04-18_04-02-39](https://github.com/wareya/OpenMW-PBR/assets/585488/1ac9ec2f-6e81-432f-a99a-fd0a14a4836c)
 
 (screenshot taken with a groundcover mod (Aesthesia))
 
-Very basic minimally invasive PBR shaders for OpenMW 0.49 dev builds. Based on revision e4c70b7861. Don't install unless you know what you're doing. Make a backup of the vanilla shaders folder by COPYING it (NOT by renaming it), then copy these shaders over the base ones.
+Very basic minimally invasive PBR shaders for OpenMW 0.49 builds. Based on revision 55107e0913. Don't install unless you know what you're doing. Make a backup of the vanilla shaders folder by COPYING it (NOT by renaming it), then copy these shaders over the base ones.
 
 Implements basic lambert diffuse lighting and schlick-ggx specular lighting. Lighting math is done in (approximately) linear light. Configuration is in lighting_pbr.glsl.
 
