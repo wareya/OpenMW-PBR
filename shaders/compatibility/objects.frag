@@ -89,6 +89,7 @@ varying vec4 passTangent;
 #define ADDITIVE_BLENDING
 #endif
 
+#include "lib/core/fragment.h.glsl"
 #include "lib/light/lighting.glsl"
 #include "lib/light/lighting_pbr.glsl"
 #include "lib/material/parallax.glsl"
@@ -114,8 +115,6 @@ uniform sampler2D orthoDepthMap;
 varying vec3 orthoDepthMapCoord;
 #endif
 
-uniform sampler2D opaqueDepthTex;
-
 void main()
 {
 #if @particleOcclusion
@@ -126,15 +125,44 @@ void main()
     vec2 offset = vec2(0.0);
 
 #if @parallax || @diffuseParallax
+    vec3 eyeDir = transpose(normalToViewMatrix) * normalize(-passViewPos);
+    float numSamples = 16.f; // Should become a constant like PARALLAX_SCALE.
+    float depthStep = 1.f / numSamples;
+    float currentDepth = 0.f;
+    vec2 baseOffset = eyeDir.xy * depthStep * 0.05f / eyeDir.z; // note this division, it's important but it also messes things up
+    // 0.05 is PARALLAX_SCALE. There should probably be bias to balance it?
 #if @parallax
-    float height = texture2D(normalMap, normalMapUV).a;
-    float flipY = (passTangent.w > 0.0) ? -1.f : 1.f;
+    baseOffset.y *= (passTangent.w > 0.0) ? -1.f : 1.f;
 #else
-    float height = texture2D(diffuseMap, diffuseMapUV).a;
     // FIXME: shouldn't be necessary, but in this path false-positives are common
-    float flipY = -1.f;
+    baseOffset.y *= -1.f;
 #endif
-    offset = getParallaxOffset(transpose(normalToViewMatrix) * normalize(-passViewPos), height, flipY);
+
+#if @parallax
+    float sampleHeight = texture2D(normalMap, normalMapUV).a;
+#else
+    float sampleHeight = texture2D(diffuseMap, diffuseMapUV).a;
+#endif
+
+    while (currentDepth < sampleHeight)
+    {
+        offset += baseOffset;
+#if @parallax
+        sampleHeight = texture2D(normalMap, normalMapUV + offset).a;
+#else
+        sampleHeight = texture2D(diffuseMap, diffuseMapUV + offset).a;
+#endif
+        currentDepth += depthStep;
+    }
+
+    // POM majyyks
+    float currentDelta  = sampleHeight - currentDepth;
+#if @parallax
+    float previousDelta = texture2D(normalMap, normalMapUV + offset - baseOffset).a - currentDepth + depthStep;
+#else
+    float previousDelta = texture2D(diffuseMap, diffuseMapUV + offset - baseOffset).a - currentDepth + depthStep;
+#endif
+    offset -= baseOffset * currentDelta / (currentDelta -  previousDelta);
 #endif
 
 vec2 screenCoords = gl_FragCoord.xy / screenRes;
@@ -143,8 +171,8 @@ vec2 screenCoords = gl_FragCoord.xy / screenRes;
     gl_FragData[0] = texture2D(diffuseMap, diffuseMapUV + offset);
 
 #if defined(DISTORTION) && DISTORTION
-    gl_FragData[0].a = getDiffuseColor().a;
-    gl_FragData[0] = applyDistortion(gl_FragData[0], distortionStrength, gl_FragCoord.z, texture2D(opaqueDepthTex, screenCoords / @distorionRTRatio).x);
+    gl_FragData[0].a *= getDiffuseColor().a;
+    gl_FragData[0] = applyDistortion(gl_FragData[0], distortionStrength, gl_FragCoord.z, sampleOpaqueDepthTex(screenCoords / @distorionRTRatio).x);
     return;
 #endif
 
@@ -169,10 +197,11 @@ vec2 screenCoords = gl_FragCoord.xy / screenRes;
 
 #if @normalMap
     vec4 normalTex = texture2D(normalMap, normalMapUV + offset);
+    vec3 normal = normalTex.xyz * 2.0 - 1.0;
 #if @reconstructNormalZ
-    normalTex.z = sqrt(1.0 - dot(normalTex.xy, normalTex.xy));
+    normal.z = sqrt(1.0 - dot(normal.xy, normal.xy));
 #endif
-    vec3 viewNormal = normalToView(normalTex.xyz * 2.0 - 1.0);
+    vec3 viewNormal = normalToView(normal);
 #else
     vec3 viewNormal = normalize(gl_NormalMatrix * passNormal);
 #endif
@@ -258,7 +287,7 @@ vec2 screenCoords = gl_FragCoord.xy / screenRes;
     fakePbrEstimate(color, metallicity, roughness, ao, f0);
 #endif
     //roughness = mix(roughness, 0.0, gl_FrontMaterial.shininess);
-    
+
     float a = gl_FragData[0].a;
     gl_FragData[0].xyz = doLightingPBR(a, gl_FragData[0].xyz, diffuseColor.xyz, getAmbientColor().xyz, getEmissionColor().xyz, getSpecularColor().xyz, passViewPos, viewNormal, shadowing, metallicity, roughness, ao, f0);
 
@@ -281,7 +310,7 @@ vec2 screenCoords = gl_FragCoord.xy / screenRes;
         viewNormal,
         near,
         far,
-        texture2D(opaqueDepthTex, screenCoords).x,
+        sampleOpaqueDepthTex(screenCoords).x,
         particleSize,
         particleFade,
         softFalloffDepth

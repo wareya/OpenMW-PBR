@@ -25,9 +25,7 @@ varying vec2 normalMapUV;
 
 // Other shaders respect forcePPL, but legacy groundcover mods were designed to work with vertex lighting.
 // They may do not look as intended with per-pixel lighting, so ignore this setting for now.
-//#define PER_PIXEL_LIGHTING @normalMap
-// Need per-pixel lighting to do PBR, and it doesn't look THAT wrong
-#define PER_PIXEL_LIGHTING (@normalMap || @forcePPL)
+#define PER_PIXEL_LIGHTING @normalMap
 
 varying float euclideanDepth;
 varying float linearDepth;
