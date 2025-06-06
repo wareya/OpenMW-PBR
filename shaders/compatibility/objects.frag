@@ -125,44 +125,15 @@ void main()
     vec2 offset = vec2(0.0);
 
 #if @parallax || @diffuseParallax
-    vec3 eyeDir = transpose(normalToViewMatrix) * normalize(-passViewPos);
-    float numSamples = 16.f; // Should become a constant like PARALLAX_SCALE.
-    float depthStep = 1.f / numSamples;
-    float currentDepth = 0.f;
-    vec2 baseOffset = eyeDir.xy * depthStep * 0.05f / eyeDir.z; // note this division, it's important but it also messes things up
-    // 0.05 is PARALLAX_SCALE. There should probably be bias to balance it?
 #if @parallax
-    baseOffset.y *= (passTangent.w > 0.0) ? -1.f : 1.f;
+    float height = texture2D(normalMap, normalMapUV).a;
+    float flipY = (passTangent.w > 0.0) ? -1.f : 1.f;
 #else
+    float height = texture2D(diffuseMap, diffuseMapUV).a;
     // FIXME: shouldn't be necessary, but in this path false-positives are common
-    baseOffset.y *= -1.f;
+    float flipY = -1.f;
 #endif
-
-#if @parallax
-    float sampleHeight = texture2D(normalMap, normalMapUV).a;
-#else
-    float sampleHeight = texture2D(diffuseMap, diffuseMapUV).a;
-#endif
-
-    while (currentDepth < sampleHeight)
-    {
-        offset += baseOffset;
-#if @parallax
-        sampleHeight = texture2D(normalMap, normalMapUV + offset).a;
-#else
-        sampleHeight = texture2D(diffuseMap, diffuseMapUV + offset).a;
-#endif
-        currentDepth += depthStep;
-    }
-
-    // POM majyyks
-    float currentDelta  = sampleHeight - currentDepth;
-#if @parallax
-    float previousDelta = texture2D(normalMap, normalMapUV + offset - baseOffset).a - currentDepth + depthStep;
-#else
-    float previousDelta = texture2D(diffuseMap, diffuseMapUV + offset - baseOffset).a - currentDepth + depthStep;
-#endif
-    offset -= baseOffset * currentDelta / (currentDelta -  previousDelta);
+    offset = getParallaxOffset(transpose(normalToViewMatrix) * normalize(-passViewPos), height, flipY);
 #endif
 
 vec2 screenCoords = gl_FragCoord.xy / screenRes;
