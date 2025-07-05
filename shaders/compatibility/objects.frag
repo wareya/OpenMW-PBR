@@ -89,6 +89,7 @@ varying vec4 passTangent;
 #define ADDITIVE_BLENDING
 #endif
 
+#include "lib/core/fragment.h.glsl"
 #include "lib/light/lighting.glsl"
 #include "lib/light/lighting_pbr.glsl"
 #include "lib/material/parallax.glsl"
@@ -113,8 +114,6 @@ uniform float softFalloffDepth;
 uniform sampler2D orthoDepthMap;
 varying vec3 orthoDepthMapCoord;
 #endif
-
-uniform sampler2D opaqueDepthTex;
 
 void main()
 {
@@ -143,8 +142,8 @@ vec2 screenCoords = gl_FragCoord.xy / screenRes;
     gl_FragData[0] = texture2D(diffuseMap, diffuseMapUV + offset);
 
 #if defined(DISTORTION) && DISTORTION
-    gl_FragData[0].a = getDiffuseColor().a;
-    gl_FragData[0] = applyDistortion(gl_FragData[0], distortionStrength, gl_FragCoord.z, texture2D(opaqueDepthTex, screenCoords / @distorionRTRatio).x);
+    gl_FragData[0].a *= getDiffuseColor().a;
+    gl_FragData[0] = applyDistortion(gl_FragData[0], distortionStrength, gl_FragCoord.z, sampleOpaqueDepthTex(screenCoords / @distorionRTRatio).x);
     return;
 #endif
 
@@ -169,10 +168,11 @@ vec2 screenCoords = gl_FragCoord.xy / screenRes;
 
 #if @normalMap
     vec4 normalTex = texture2D(normalMap, normalMapUV + offset);
+    vec3 normal = normalTex.xyz * 2.0 - 1.0;
 #if @reconstructNormalZ
-    normalTex.z = sqrt(1.0 - dot(normalTex.xy, normalTex.xy));
+    normal.z = sqrt(1.0 - dot(normal.xy, normal.xy));
 #endif
-    vec3 viewNormal = normalToView(normalTex.xyz * 2.0 - 1.0);
+    vec3 viewNormal = normalToView(normal);
 #else
     vec3 viewNormal = normalize(gl_NormalMatrix * passNormal);
 #endif
@@ -258,7 +258,7 @@ vec2 screenCoords = gl_FragCoord.xy / screenRes;
     fakePbrEstimate(color, metallicity, roughness, ao, f0);
 #endif
     //roughness = mix(roughness, 0.0, gl_FrontMaterial.shininess);
-    
+
     float a = gl_FragData[0].a;
     gl_FragData[0].xyz = doLightingPBR(a, gl_FragData[0].xyz, diffuseColor.xyz, getAmbientColor().xyz, getEmissionColor().xyz, getSpecularColor().xyz, passViewPos, viewNormal, shadowing, metallicity, roughness, ao, f0);
 
@@ -281,7 +281,7 @@ vec2 screenCoords = gl_FragCoord.xy / screenRes;
         viewNormal,
         near,
         far,
-        texture2D(opaqueDepthTex, screenCoords).x,
+        sampleOpaqueDepthTex(screenCoords).x,
         particleSize,
         particleFade,
         softFalloffDepth

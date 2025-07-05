@@ -65,10 +65,11 @@ void main()
 
 #if @normalMap
     vec4 normalTex = texture2D(normalMap, adjustedUV);
+    vec3 normal = normalTex.xyz * 2.0 - 1.0;
 #if @reconstructNormalZ
-    normalTex.z = sqrt(1.0 - dot(normalTex.xy, normalTex.xy));
+    normal.z = sqrt(1.0 - dot(normal.xy, normal.xy));
 #endif
-    vec3 viewNormal = normalToView(normalTex.xyz * 2.0 - 1.0);
+    vec3 viewNormal = normalToView(normal);
 #else
     vec3 viewNormal = normalize(gl_NormalMatrix * passNormal);
 #endif
@@ -112,12 +113,11 @@ void main()
     fakePbrEstimate(color, metallicity, roughness, ao, f0);
 #endif
     //roughness = mix(roughness, 0.0, gl_FrontMaterial.shininess);
-    
+
     float a = 1.0;
     gl_FragData[0].xyz = doLightingPBR(a, gl_FragData[0].xyz, diffuseColor.xyz, getAmbientColor().xyz, getEmissionColor().xyz, getSpecularColor().xyz, passViewPos, viewNormal, shadowing, metallicity, roughness, ao, f0);
 
 #endif // PBR_BYPASS
-
 
     gl_FragData[0] = applyFogAtDist(gl_FragData[0], euclideanDepth, linearDepth, far);
 

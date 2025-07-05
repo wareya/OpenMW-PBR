@@ -22,9 +22,7 @@ varying vec2 normalMapUV;
 
 // Other shaders respect forcePPL, but legacy groundcover mods were designed to work with vertex lighting.
 // They may do not look as intended with per-pixel lighting, so ignore this setting for now.
-//#define PER_PIXEL_LIGHTING @normalMap
-// Need per-pixel lighting to do PBR, and it doesn't look THAT wrong
-#define PER_PIXEL_LIGHTING (@normalMap || @forcePPL)
+#define PER_PIXEL_LIGHTING @normalMap
 
 varying float euclideanDepth;
 varying float linearDepth;
@@ -63,10 +61,11 @@ void main()
 
 #if @normalMap
     vec4 normalTex = texture2D(normalMap, normalMapUV);
+    vec3 normal = normalTex.xyz * 2.0 - 1.0;
 #if @reconstructNormalZ
-    normalTex.z = sqrt(1.0 - dot(normalTex.xy, normalTex.xy));
+    normal.z = sqrt(1.0 - dot(normal.xy, normal.xy));
 #endif
-    vec3 viewNormal = normalToView(normalTex.xyz * 2.0 - 1.0);
+    vec3 viewNormal = normalToView(normal);
 #else
     vec3 viewNormal = normalToView(normalize(passNormal));
 #endif
@@ -86,7 +85,7 @@ void main()
 
     clampLightingResult(lighting);
     gl_FragData[0].xyz *= lighting;
-    
+
 #else // PBR_BYPASS
 
     vec3 color = gl_FragData[0].xyz;
@@ -95,7 +94,7 @@ void main()
     float ao = 1.0;
     float f0 = 0.04;
     fakePbrEstimate(color, metallicity, roughness, ao, f0);
-    
+
     float a = 1.0;
     gl_FragData[0].xyz = doLightingPBR(a, gl_FragData[0].xyz, vec3(1.0), vec3(1.0), vec3(0.0), vec3(0.0), passViewPos, viewNormal, shadowing, metallicity, roughness, ao, f0);
 #endif // PBR_BYPASS

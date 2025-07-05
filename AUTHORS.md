@@ -61,6 +61,7 @@ Programmers
     Cory F. Cohen (cfcohen)
     Cris Mihalache (Mirceam)
     crussell187
+    Sam Hellawell (cykoder)
     Dan Vukelich (sanchezman)
     darkf
     Dave Corley (S3ctor)
@@ -98,6 +99,7 @@ Programmers
     gugus/gus
     guidoj
     Haoda Wang (h313)
+    holorat
     hristoast
     Internecine
     Ivan Beloborodov (myrix)
@@ -143,6 +145,7 @@ Programmers
     Łukasz Gołębiewski (lukago)
     Lukasz Gromanowski (lgro)
     Mads Sandvei (Foal)
+    Maksim Eremenko (Max Yari)
     Marc Bouvier (CramitDeFrog)
     Marcin Hulist (Gohan)
     Mark Siewert (mark76)
@@ -153,6 +156,7 @@ Programmers
     Mateusz Malisz (malice)
     Max Henzerling (SaintMercury)
     megaton
+    Mehdi Yousfi-Monod (mym)
     Michael Hogan (Xethik)
     Michael Mc Donnell
     Michael Papageorgiou (werdanith)
@@ -228,7 +232,9 @@ Programmers
     Tess (tescoShoppah)
     thegriglat
     Thomas Luppi (Digmaster)
+    Tim Hagberg (hazardMan)
     tlmullis
+    trav
     tri4ng1e
     Thoronador
     Tobias Tribble (zackhasacat)
@@ -341,3 +347,4 @@ for creating the icon used for the Data Files tab of the OpenMW Launcher.
 
 Thanks to DejaVu team,
 for their DejaVuLGCSansMono fontface, see DejaVuFontLicense.txt for their license terms.
+
