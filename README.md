@@ -1,8 +1,8 @@
 This repository is not associated with OpenMW
 
-# Wareya's PBR shaders for OpenMW
+# Wareya's PBR shaders for OpenMW 0.50
 
-Based on OpenMW commit 55107e0913.
+Based on OpenMW commit 47d78e004b.
 
 ![openmw_2024-04-18_04-02-39](https://github.com/wareya/OpenMW-PBR/assets/585488/1ac9ec2f-6e81-432f-a99a-fd0a14a4836c)
 
