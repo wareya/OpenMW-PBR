@@ -127,13 +127,10 @@ void main()
 #if @parallax || @diffuseParallax
 #if @parallax
     float height = texture2D(normalMap, normalMapUV).a;
-    float flipY = (passTangent.w > 0.0) ? -1.f : 1.f;
 #else
     float height = texture2D(diffuseMap, diffuseMapUV).a;
-    // FIXME: shouldn't be necessary, but in this path false-positives are common
-    float flipY = -1.f;
 #endif
-    offset = getParallaxOffset(transpose(normalToViewMatrix) * normalize(-passViewPos), height, flipY);
+    offset = getParallaxOffset(transpose(normalToViewMatrix) * normalize(-passViewPos), height);
 #endif
 
 vec2 screenCoords = gl_FragCoord.xy / screenRes;
@@ -219,9 +216,9 @@ vec2 screenCoords = gl_FragCoord.xy / screenRes;
 #endif
 
     float shadowing = unshadowedLightRatio(-passViewPos.z);
-
+    
 #if PBR_BYPASS
-
+    
     vec3 lighting, specular;
 #if !PER_PIXEL_LIGHTING
     lighting = passLighting + shadowDiffuseLighting * shadowing;
