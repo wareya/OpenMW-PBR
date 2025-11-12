@@ -57,7 +57,6 @@
 // NO LONGER SUPPORTED: this is now an openmw option
 
 // use diffuse UVs for specmaps (allow parallax on specmaps)
-// FIXME: do I need to reimplement this?
 #define SPECMAP_USE_DIFFUSE_UV 1
 
 #define PI 3.141592653589793
