@@ -99,7 +99,7 @@ void main()
     fakePbrEstimate(color, metallicity, roughness, ao, f0);
 
     float a = 1.0;
-    gl_FragData[0].xyz = doLightingPBR(0.0, gl_FragData[0].xyz, vec3(1.0), vec3(1.0), vec3(0.0), vec3(0.0), passViewPos, viewNormal, shadowing, metallicity, roughness, ao, f0);
+    gl_FragData[0].xyz = doLightingPBR(a, gl_FragData[0].xyz, vec3(1.0), vec3(1.0), vec3(0.0), vec3(0.0), passViewPos, viewNormal, shadowing, metallicity, roughness, ao, f0);
 #endif // PBR_BYPASS
 
     gl_FragData[0] = applyFogAtDist(gl_FragData[0], euclideanDepth, linearDepth, far);
