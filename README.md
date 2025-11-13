@@ -15,7 +15,7 @@ Based on OpenMW commit 47d78e004b.
 
 (screenshot taken with a groundcover mod (Aesthesia) and simple post-processing shaders (like HDR))
 
-Very basic minimally invasive PBR shaders for OpenMW 0.49 builds. Based on revision 55107e0913. Don't install unless you know what you're doing. Make a backup of the vanilla shaders folder by COPYING it (NOT by renaming it), then copy these shaders over the base ones.
+Very basic minimally invasive PBR shaders for OpenMW. Don't install unless you know what you're doing. Make a backup of the vanilla shaders folder by COPYING it (NOT by renaming it), then copy these shaders over the base ones (DO NOT try to install this over another core shader mod! IT WILL NOT WORK!!!).
 
 Implements basic lambert diffuse lighting and schlick-ggx specular lighting. Lighting math is done in (approximately) linear light. Configuration is in lighting_pbr.glsl.
 
