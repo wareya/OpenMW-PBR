@@ -2,13 +2,17 @@
 
 /////////
 /////////
-/////////
-/////////
 // IF YOUR TEXTURES LOOK REALLY SHINY FOR NO REASON, YOU PROBABLY NEED TO CHANGE THIS TO 1
 // whether pbr specularity materials have inverted roughness or not
 #define PBR_MAT_ROUGHNESS_INVERTED 0
 /////////
 /////////
+
+/////////
+/////////
+// IF YOUR TEXTURES LOOK TOTALLY BLACK FOR NO REASON, YOU PROBABLY NEED TO CHANGE THIS TO 1
+// whether some of your PBR materials have broken (inverted or fully black) AO channels. negatively affects AO, only use if necessary.
+#define PBR_IM_USING_BROKEN_AO_MAPS_PLS_TRASH_THEM_KTHX 0
 /////////
 /////////
 
@@ -278,7 +282,7 @@ float BRDF(vec3 normalDir, vec3 viewDir, vec3 lightDir, vec3 halfDir, float roug
     float halfView       = max(dot(viewDir  ,  halfDir), 0.0);
     
 #if PBR_SHITTYBRDF
-    float NDF = distGGXApprox(halfIncidence, roughness);
+    float NDF = distGGXApprox(halfIncidence, roughness) * 0.7;
     //float geo = geoSmithApprox(viewIncidence, lightIncidence, roughness);
     //geo = geo / (4.0 * viewIncidence * lightIncidence + 0.0001);
     float geo = geoGGX(lightIncidence, viewIncidence, roughness) * 0.7;
@@ -407,7 +411,8 @@ vec3 perLightPBR(float alpha, vec3 diffuseColor, vec3 diffuseVertexColor, vec3 a
         float falloff_mod = standard_falloff*(1.0/ref_falloff);
 
 #if PBR_FALLOFF_NO_COMPENSATION
-        falloff_mod = 4000.0;
+        // Chosen to make highperf mode look more like normal mode.
+        falloff_mod = 2000.0;
 #endif
         
         falloff_mod *= LIGHT_STRENGTH_POINT_SPECULAR;
@@ -667,6 +672,9 @@ void specMapToPBR(vec4 specTex, out float metallicity, out float roughness, out 
     
     #if DO_PBR
         ao = specTex.b;
+        #if PBR_IM_USING_BROKEN_AO_MAPS_PLS_TRASH_THEM_KTHX
+            ao = max(1.0-ao, ao);
+        #endif
     #else
         ao = 1.0;
     #endif
