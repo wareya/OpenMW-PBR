@@ -61,7 +61,9 @@
         float _y1 = length(dFdy(uvWorld));
         float _x2 = length(dFdx(passViewPos.xyz));
         float _y2 = length(dFdy(passViewPos.xyz));
-        float _d = length(vec2(_x2, _y2))/length(vec2(_x1, _y1));
+        //float _d = length(vec2(_x2, _y2))/length(vec2(_x1, _y1));
+        //float _d = max(_x2, _y2)/max(_x1, _y1);
+        float _d = (_x2 + _y2)/(_x1 + _y1);
         
         vec3 _offs = vec3(offset.x, -offset.y, 0.0) * _d;
         _offs = normalToViewMatrix * _offs;
