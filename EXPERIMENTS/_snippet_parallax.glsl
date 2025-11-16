@@ -1,79 +1,49 @@
 
 #if @parallax
 
-    vec3 eyeTexSpace = transpose(normalToViewMatrix) * normalize(-passViewPos);
+    //vec3 eyeTexSpace = transpose(normalToViewMatrix) * normalize(-passViewPos);
+    vec3 eyeTexSpace = normalize(-passViewPos) * normalToViewMatrix;
     float height = texture2D(normalMap, adjustedUV).a; // 0 : deep. 1 : surface.
-    
     vec2 offset = getParallaxOffset(eyeTexSpace, height);
     
     // START: parallax occlusion
     
     float _norm = 0.7;
-    //float _norm = eyeTexSpace.z;
-    
     vec3 newEyeTexSpace = eyeTexSpace * vec3(-PARALLAX_SCALE, PARALLAX_SCALE, -1.0);
     newEyeTexSpace.xy *= _norm;
+    newEyeTexSpace /= -newEyeTexSpace.z;
     
-    vec3 coord3d_origin = vec3(adjustedUV, 0.0) - newEyeTexSpace * 0.9999;
+    float _scale_offs = -PARALLAX_BIAS/PARALLAX_SCALE;
     
-    //vec3 coord3d = vec3(adjustedUV, 0.0);
-    vec3 coord3d = coord3d_origin + newEyeTexSpace * (1.0 - height * 0.9) * 0.9999;
-    coord3d += (coord3d - coord3d_origin) * 0.9999;
-    coord3d += (coord3d - coord3d_origin);
+    vec3 coord3d_origin = vec3(adjustedUV, _scale_offs) - newEyeTexSpace * (1.0 - _scale_offs);
+    vec3 coord3d        = vec3(adjustedUV, _scale_offs) + newEyeTexSpace * _scale_offs;
     
-    coord3d_origin.z -= PARALLAX_BIAS/PARALLAX_SCALE;
-    coord3d.z -= PARALLAX_BIAS/PARALLAX_SCALE;
-    
-    // two-pass approach
-    float h_iter = 5.0;
+    // multipass approach
+    float passes = 3.0;
+    float h_iter = 6.0;
     float i = 1.0;
-    // coarse
-    for (; i <= h_iter; i += 1.0)
+    vec3 expected_3d = coord3d_origin;
+    
+    float h_iter_loop = 1.0 / h_iter;
+    for (float j = 0; j < passes; j += 1.0)
     {
-        float t = i / h_iter;
-        vec3 expected_3d = mix(coord3d_origin, coord3d, t);
-        float probe_height = texture2D(normalMap, expected_3d.xy).a;
-        if (probe_height > expected_3d.z)
-            break;
-    }
-    i -= 1.0;
-    // fine
-    float plx_end = i + 1.0;
-    for (; i < plx_end; i += (1.0 / h_iter))
-    {
-        float t = i / h_iter;
-        vec3 expected_3d = mix(coord3d_origin, coord3d, t);
-        float probe_height = texture2D(normalMap, expected_3d.xy).a;
-#define ULTRAFINE 1
-#if !ULTRAFINE
-        if (probe_height > expected_3d.z || i + (1.0 / h_iter) >= plx_end)
-#else
-        if (probe_height > expected_3d.z)
-#endif
+        for (; i <= h_iter; i += h_iter * h_iter_loop)
         {
-            offset = expected_3d.xy - adjustedUV;
-            break;
+            float t = i / h_iter;
+            expected_3d = mix(coord3d_origin, coord3d, t);
+            float probe_height = texture2D(normalMap, expected_3d.xy).a;
+            if (probe_height > expected_3d.z)
+                break;
         }
+        i -= h_iter * h_iter_loop;
+        h_iter_loop /= h_iter;
     }
-    // ultrafine
-#if ULTRAFINE
-    i -= 1.0/h_iter;
-    plx_end = i + 1.0/h_iter;
-    for (; i < plx_end; i += (1.0 / (h_iter*h_iter)))
-    {
-        float t = i / h_iter;
-        vec3 expected_3d = mix(coord3d_origin, coord3d, t);
-        float probe_height = texture2D(normalMap, expected_3d.xy).a;
-        if (probe_height > expected_3d.z || i + (1.0 / (h_iter*h_iter)) >= plx_end)
-        {
-            offset = expected_3d.xy - adjustedUV;
-            break;
-        }
-    }
-#endif
+    
+    offset = expected_3d.xy - adjustedUV;
+    height = expected_3d.z;
     
     // END: parallax occlusion
     
     adjustedUV += offset;
-
+    
 #endif
