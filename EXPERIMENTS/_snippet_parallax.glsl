@@ -49,6 +49,41 @@
 #endif
 
 
+// ..... or, linear contact approximation version:
+    float passes = 2.0;
+    float h_iter = 6.0;
+    float i = 1.0;
+    vec3 expected_3d = coord3d_origin;
+    
+    float h_iter_loop = 1.0 / h_iter;
+    for (float j = 0; j < passes; j += 1.0)
+    {
+        float prev_height = -10.0;
+        for (; i <= h_iter; i += h_iter * h_iter_loop)
+        {
+            float t = i / h_iter;
+            expected_3d = mix(coord3d_origin, coord3d, t);
+            float probe_height = texture2D(normalMap, expected_3d.xy).a;
+            if (probe_height > expected_3d.z)
+            {
+                if (j + 1 == passes && prev_height != -10.0)
+                {
+                    // linear contact estimation
+                    float prev_3d_z = mix(coord3d_origin, coord3d, t - h_iter_loop).z;
+                    float a = prev_3d_z - prev_height;
+                    float b = probe_height - expected_3d.z;
+                    
+                    expected_3d = mix(coord3d_origin, coord3d, t - (b/(a+b)) * h_iter_loop);
+                }
+                break;
+            }
+            prev_height = probe_height;
+        }
+        i -= h_iter * h_iter_loop;
+        h_iter_loop /= h_iter;
+    }
+
+
 // .........
 // Shadow offset
 
