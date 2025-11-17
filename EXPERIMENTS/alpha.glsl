@@ -1,3 +1,9 @@
+// NOTE: you must add:
+//   #define CASTING_SHADOWS
+// before
+//   #include "lib/material/alpha.glsl"
+// in shadowcasting.frag
+
 #ifndef LIB_MATERIAL_ALPHA
 #define LIB_MATERIAL_ALPHA
 
@@ -124,3 +130,4 @@ float alphaTest(float alpha, float ref)
 }
 
 #endif
+
