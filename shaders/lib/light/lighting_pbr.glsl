@@ -93,7 +93,7 @@
 // whether to use specular math for non-metallic ambience
 // (metallic ambience always uses specular math)
 // looks bad because vanilla models have bad vertex normals
-#define PBR_SPECULAR_AMBIENT 1
+#define PBR_SPECULAR_AMBIENT 0
 // similar but for the diffuse term
 #define PBR_ENV_AMBIENT PBR_ENV_AMBIENT_DEFAULT
 // disable the "horizon line" ambient environment guess
@@ -456,15 +456,6 @@ vec3 ambientGuess(float height, vec3 ambientTerm, float roughness)
     return mix(ambientTerm*(0.3 + roughness * 0.2), ambientTerm*1.5, t*0.5+0.5) * gradient;
 }
 
-vec2 EnvBRDFApprox(float Roughness, float NoV)
-{
-    vec4 c0 = vec4(-1, -0.0275, -0.572, 0.022);
-    vec4 c1 = vec4(1, 0.0425, 1.04, -0.04);
-    vec4 r = Roughness * c0 + c1;
-    float a004 = min(r.x * r.x, exp2(-9.28 * NoV)) * r.x + r.y;
-    return vec2(-1.04, 1.04) * a004 + r.zw;
-}
-
 vec3 perAmbientPBR(vec3 diffuseColor, vec3 ambientColor, vec3 ambientBias, vec3 ambientAdjust, float ao, float metallicity, float roughness, vec3 normal, vec3 viewDir, vec3 f0, vec3 f90)
 {
     vec3 light = vec3(0.0);
@@ -530,37 +521,8 @@ vec3 perAmbientPBR(vec3 diffuseColor, vec3 ambientColor, vec3 ambientBias, vec3 
         float f0_part = (1.0 - f90_part)*0.8;
         #endif
         
-        if (false)
-        {
-            float dot_02 = pow(vdot, 0.2);
-            float inv_2dot = max(0.0, 1.0 - vdot*2.0);
-            float inv_2dot_2 = inv_2dot*inv_2dot;
-            float dot_02_3 = dot_02*dot_02*dot_02;
-            float inv_roughness = clamp(1.0 - roughness, 0.0, 1.0);
-            float inv_roughness_2 = inv_roughness*inv_roughness;
-            float hack_f90 = clamp(((vdot*7.0 - roughness + 0.05)/(vdot+0.01) + 0.5)*0.2, 0.0, 1.0)*0.5 + 0.5;
-            
-            // extremely awful terible estimation of the environmental BRDF, non-hacky seen here:
-            // https://google.github.io/filament/Filament.md.html#toc5.3.4.3
-            // https://learnopengl.com/PBR/IBL/Specular-IBL
-            // red is f0, green is f90
-            f0_part = clamp(mix(dot_02_3, 0.6 - dot_02_3*0.25, roughness), 0.0, 1.0);
-            f0_part = 1.0 - f0_part;
-            f0_part = f0_part*f0_part;
-            f0_part = 1.0 - f0_part;
-            f0_part = f0_part*f0_part;
-            f90_part = mix(inv_2dot_2*inv_roughness_2, 0.0, 1.0 - inv_roughness_2) * hack_f90;
-        }
-        
-        if (false)
-        {
-            vec2 q = EnvBRDFApprox(roughness, vdot);
-            f0_part = q.x;
-            f90_part = q.y;
-        }
-        
         f90_part = min(f90_part, 1.0 - f0_part);
-
+        
 #if PBR_METAL_F90_DARKENING_HACK
         f90 *= sqrt(diffuseColor) * 0.9 + 0.1;
 #endif
