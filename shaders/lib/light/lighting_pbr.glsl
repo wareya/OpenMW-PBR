@@ -29,7 +29,7 @@
 #define PBR_AUTO_ROUGHNESS_BASIC 1
 #define PBR_ENV_AMBIENT_DEFAULT 0
 #define PBR_SPECULAR_AO_HACK_DEFAULT 0
-#define PBR_NO_AMBENV_DEFAULT 1
+#define PBR_NO_AMBENVGUESS_DEFAULT 1
 #else
 #define PBR_GAMMA_DEFAULT 2.2
 #define PBR_RANGEMUL_DEFAULT 2.0
@@ -40,7 +40,7 @@
 #define PBR_AUTO_ROUGHNESS_BASIC 0
 #define PBR_ENV_AMBIENT_DEFAULT 1
 #define PBR_SPECULAR_AO_HACK_DEFAULT 1
-#define PBR_NO_AMBENV_DEFAULT 0
+#define PBR_NO_AMBENVGUESS_DEFAULT 0
 #endif
 
 // bypass all PBR logic and use vanilla shading
@@ -89,19 +89,24 @@
 #define PBR_AUTO_ROUGHNESS_MAX 0.9
 // enable or disable PBR specularity entirely (recommended: 0 / (enabled); good specularity is the main aspect of PBR rendering)
 #define PBR_NO_SPECULAR 0
+
 // whether to use specular math for non-metallic ambience
 // (metallic ambience always uses specular math)
 // looks bad because vanilla models have bad vertex normals
-#define PBR_SPECULAR_AMBIENT 0
+#define PBR_SPECULAR_AMBIENT 1
 // similar but for the diffuse term
 #define PBR_ENV_AMBIENT PBR_ENV_AMBIENT_DEFAULT
+// disable the "horizon line" ambient environment guess
+#define PBR_NO_AMBIENT_ENV_GUESS PBR_NO_AMBENVGUESS_DEFAULT
+// for ambience only, darken the f90 component of metallic specularity based on the diffuse texture
+// this is physically incorrect, but makes physically impossible assets (e.g. dark metals) designed for dark interiors look less strange against ambient lighting
+#define PBR_METAL_F90_DARKENING_HACK 1
+
 // whether to guess an AO value or not (simple clamped offset brightness calculation)
 #define PBR_AUTO_AO PBR_AAO_DEFAULT
 // make ao affect specularity
 // this is physically wrong, but doing it looks better with non-PBR materials than not doing it
 #define PBR_SPECULAR_AO_HACK PBR_SPECULAR_AO_HACK_DEFAULT
-// disable the "horizon line" ambient environment guess
-#define PBR_NO_AMBIENT_ENV_GUESS PBR_NO_AMBENV_DEFAULT
 
 // bias normals away from edges when doing specular enegy compensation
 #define PBR_EDGE_NORMAL_HACK 1
@@ -161,17 +166,10 @@ float lcalcCutoff_pbr(int lightIndex, float lightDistance)
 {
     return 1.0 - quickstep((lightDistance / lcalcRadius(lightIndex)) - 1.0);
 }
-float lcalcIlluminationNoCutoff_pbr(int lightIndex, float lightDistance)
+float lcalcIlluminationNoCutoff_pbr(int lightIndex, float dist)
 {
-#if @lightingMethodPerObjectUniform
-    float illumination = clamp(1.0 / (@getLight[lightIndex][0].w + @getLight[lightIndex][1].w * lightDistance + @getLight[lightIndex][2].w * lightDistance * lightDistance), 0.0, 1.0);
-    return illumination;
-#elif @lightingMethodUBO
-    float illumination = clamp(1.0 / (@getLight[lightIndex].attenuation.x + @getLight[lightIndex].attenuation.y * lightDistance + @getLight[lightIndex].attenuation.z * lightDistance * lightDistance), 0.0, 1.0);
-    return illumination;
-#else
-    return clamp(1.0 / (@getLight[lightIndex].constantAttenuation + @getLight[lightIndex].linearAttenuation * lightDistance + @getLight[lightIndex].quadraticAttenuation * lightDistance * lightDistance), 0.0, 1.0);
-#endif
+    float illumination = 1.0 / (lcalcConstantAttenuation(lightIndex) + lcalcLinearAttenuation(lightIndex) * dist + lcalcQuadraticAttenuation(lightIndex) * dist * dist);
+    return clamp(illumination, 0.0, 1.0);
 }
 
 float fresnelFactorSchlick(float incidence)
@@ -357,12 +355,11 @@ vec3 perLightPBR(float alpha, vec3 diffuseColor, vec3 diffuseVertexColor, vec3 a
     // (also, do it if this light is the sun OR we're indoors)
     if (radius < 0.0 || indoors)
     {
-        lightColor *= diffuseVertexColor * shadowing;
+        lightColor *= diffuseVertexColor ;
     }
     else
 #endif
     {
-        lightColor *= shadowing;
         diffuseColor *= diffuseVertexColor;
     }
     
@@ -400,9 +397,12 @@ vec3 perLightPBR(float alpha, vec3 diffuseColor, vec3 diffuseVertexColor, vec3 a
     #if PBR_DIFFUSE_BURLEY || PBR_DIFFUSE_BURLEY_APPROX
     lambert = Burley(lightDir, normalDir, viewDir, halfDir, baseIncidence, roughness) * (falloff * (1.0/PI));
     #endif
-    vec3 diff = diffuseColor * lambert  * lightColor * (1.0 - fresnel) * (1.0 - metallicity);
     
-    vec3 spec = vec3(1.0)    * specular * lightColor * fresnel;
+    vec3 diffuseFraction = lambert * shadowing;
+    
+    vec3 diff = diffuseColor * diffuseFraction  * lightColor * (1.0 - fresnel) * (1.0 - metallicity);
+    
+    vec3 spec = vec3(1.0)    * specular * shadowing * lightColor * fresnel;
     if (radius >= 0.0)
     {
         //spec *= falloff;
@@ -454,6 +454,15 @@ vec3 ambientGuess(float height, vec3 ambientTerm, float roughness)
     t = mix(t, 0.0, clamp(roughness*2.0-1.0, 0.0, 1.0));
     float gradient = mix(mix(0.2, 1.8, height*0.5+0.5), 1.0, roughness);
     return mix(ambientTerm*(0.3 + roughness * 0.2), ambientTerm*1.5, t*0.5+0.5) * gradient;
+}
+
+vec2 EnvBRDFApprox(float Roughness, float NoV)
+{
+    vec4 c0 = vec4(-1, -0.0275, -0.572, 0.022);
+    vec4 c1 = vec4(1, 0.0425, 1.04, -0.04);
+    vec4 r = Roughness * c0 + c1;
+    float a004 = min(r.x * r.x, exp2(-9.28 * NoV)) * r.x + r.y;
+    return vec2(-1.04, 1.04) * a004 + r.zw;
 }
 
 vec3 perAmbientPBR(vec3 diffuseColor, vec3 ambientColor, vec3 ambientBias, vec3 ambientAdjust, float ao, float metallicity, float roughness, vec3 normal, vec3 viewDir, vec3 f0, vec3 f90)
@@ -521,11 +530,45 @@ vec3 perAmbientPBR(vec3 diffuseColor, vec3 ambientColor, vec3 ambientBias, vec3 
         float f0_part = (1.0 - f90_part)*0.8;
         #endif
         
-        light += ambientAdjust * ambientTerm * (f0*f0_part + f90*f90_part) * metallicity;
+        if (false)
+        {
+            float dot_02 = pow(vdot, 0.2);
+            float inv_2dot = max(0.0, 1.0 - vdot*2.0);
+            float inv_2dot_2 = inv_2dot*inv_2dot;
+            float dot_02_3 = dot_02*dot_02*dot_02;
+            float inv_roughness = clamp(1.0 - roughness, 0.0, 1.0);
+            float inv_roughness_2 = inv_roughness*inv_roughness;
+            float hack_f90 = clamp(((vdot*7.0 - roughness + 0.05)/(vdot+0.01) + 0.5)*0.2, 0.0, 1.0)*0.5 + 0.5;
+            
+            // extremely awful terible estimation of the environmental BRDF, non-hacky seen here:
+            // https://google.github.io/filament/Filament.md.html#toc5.3.4.3
+            // https://learnopengl.com/PBR/IBL/Specular-IBL
+            // red is f0, green is f90
+            f0_part = clamp(mix(dot_02_3, 0.6 - dot_02_3*0.25, roughness), 0.0, 1.0);
+            f0_part = 1.0 - f0_part;
+            f0_part = f0_part*f0_part;
+            f0_part = 1.0 - f0_part;
+            f0_part = f0_part*f0_part;
+            f90_part = mix(inv_2dot_2*inv_roughness_2, 0.0, 1.0 - inv_roughness_2) * hack_f90;
+        }
+        
+        if (false)
+        {
+            vec2 q = EnvBRDFApprox(roughness, vdot);
+            f0_part = q.x;
+            f90_part = q.y;
+        }
+        
+        f90_part = min(f90_part, 1.0 - f0_part);
+
+#if PBR_METAL_F90_DARKENING_HACK
+        f90 *= sqrt(diffuseColor) * 0.9 + 0.1;
+#endif
+        
+        light += ambientAdjust * ambientTerm * ao * (f0*f0_part + f90*f90_part) * metallicity;
         
 #if PBR_SPECULAR_AMBIENT
-        float contrib = clamp(1.0 - mix(dot(f0*f0_part, vec3(1.0/3.0)) + f90_part, 1.0, metallicity), 0.0, 1.0);
-        light += diffuseColor * ambientAdjust * ambientTerm * ao * contrib;
+        light += ambientAdjust * ambientTerm * ao * (diffuseColor*(1.0-f90_part) + f90*f90_part * diffuseColor) * (1.0 - metallicity);
 #endif
     }
 
@@ -535,7 +578,6 @@ vec3 perAmbientPBR(vec3 diffuseColor, vec3 ambientColor, vec3 ambientBias, vec3 
 
 vec3 doLightingPBR(float alpha, vec3 diffuseColor, vec3 diffuseVertexColor, vec3 ambientColor, vec3 emissiveColor, vec3 specularTint, vec3 viewPos, vec3 normal, float _shadowing, float metallicity, float roughness, float ao, float f0_scalar)
 {
-    
 #if !DO_PBR
     metallicity = 0.0;
     ao = 1.0;
@@ -572,6 +614,7 @@ vec3 doLightingPBR(float alpha, vec3 diffuseColor, vec3 diffuseVertexColor, vec3
     vec3 ambientBias = vec3(0.0);
     
     vec3 shadowing = vec3(_shadowing);
+    //shadowing.r = pow(shadowing.r, 0.7);
     vec3 light = vec3(0.0);
     
     light += perLightPBR(alpha, diffuseColor, diffuseVertexColor, ambientColor, shadowing, normal, viewDir, normalize(lcalcPosition(0)), 1.0, -1.0, 1.0, 1.0, 1.0, vec3(0.0), sunColor, metallicity, roughness, ao, f0, f90, indoors, ambientBias);
@@ -667,7 +710,7 @@ void specMapToPBR(vec4 specTex, out float metallicity, out float roughness, out 
     #else
         roughness = specTex.g;
     #endif
-        roughness *= roughness;
+    roughness *= roughness;
     roughness = clamp(roughness, PBR_MAT_ROUGHNESS_FLOOR, 1.0);
     
     #if DO_PBR
