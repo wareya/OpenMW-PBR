@@ -280,17 +280,15 @@ float BRDF(vec3 normalDir, vec3 viewDir, vec3 lightDir, vec3 halfDir, float roug
     float halfView       = max(dot(viewDir  ,  halfDir), 0.0);
     
 #if PBR_SHITTYBRDF
-    float NDF = distGGXApprox(halfIncidence, roughness) * 0.7;
-    //float geo = geoSmithApprox(viewIncidence, lightIncidence, roughness);
-    //geo = geo / (4.0 * viewIncidence * lightIncidence + 0.0001);
-    float geo = geoGGX(lightIncidence, viewIncidence, roughness) * 0.7;
+    float NDF = distGGXApprox(halfIncidence, roughness);
+    float geo = geoGGX(lightIncidence, viewIncidence, roughness) * 0.5;
 #else
     float NDF = distGGX(halfIncidence, roughness);
     float geo = geoSmith(viewIncidence, lightIncidence, roughness);
     geo = geo / (4.0 * viewIncidence * lightIncidence + 0.0001);
 #endif
     
-#if PBR_GODOT_BRDF
+#if PBR_GODOT_BRDF && !PBR_SHITTYBRDF
     geo = geoGGX(lightIncidence, viewIncidence, roughness);
 #endif
 
@@ -341,13 +339,14 @@ vec3 perLightPBR(float alpha, vec3 diffuseColor, vec3 diffuseVertexColor, vec3 a
     float lightIncidence = dot(normalDir, lightDir);
     float baseIncidence = lightIncidence;
     
-    //if (dot(lightColor, vec3(1.0/3.0)) < 0.0)
     if (dot(lightColor, vec3(1.0)) < 0.0)
         ambientBias += lightColor * max(0.0, baseIncidence) * falloff;
     
     ambientLightColor = max(ambientLightColor, vec3(0.0));
     lightColor = max(lightColor, vec3(0.0));
     falloff = max(falloff, 0.0);
+    
+    light += diffuseColor * ambientColor * falloff * ao * ambientLightColor;
     
 #if PBR_VERTEX_COLOR_HACK && DO_PBR
     // the main use of vertex colors in MW assets is as a GI approximation, so make it affect light instead of diffuse
@@ -389,6 +388,8 @@ vec3 perLightPBR(float alpha, vec3 diffuseColor, vec3 diffuseVertexColor, vec3 a
     #if PBR_EDGE_NORMAL_HACK
         adjust = clamp((adjust-0.07)*4.0, 0.0, adjust);
     #endif
+    if (adjust == 0.0)
+        return light;
     specular *= adjust;
 
 #if DO_PBR
@@ -432,11 +433,9 @@ vec3 perLightPBR(float alpha, vec3 diffuseColor, vec3 diffuseVertexColor, vec3 a
     // now apply lighting
     light += diff;
     light += spec;
-    light += diffuseColor * ambientColor * falloff * ao * ambientLightColor;
 #else
     float lambert = baseIncidence * falloff;
     light += diffuseColor * lambert * lightColor * shadowing;
-    light += diffuseColor * ambientColor * falloff * ao * ambientLightColor;
 #endif
     return light;
 }
