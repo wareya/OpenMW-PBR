@@ -30,6 +30,7 @@
 #define PBR_ENV_AMBIENT_DEFAULT 0
 #define PBR_SPECULAR_AO_HACK_DEFAULT 0
 #define PBR_NO_AMBENVGUESS_DEFAULT 1
+#define PBR_EDGE_NORMAL_HACK_DEFAULT 0
 #else
 #define PBR_GAMMA_DEFAULT 2.2
 #define PBR_RANGEMUL_DEFAULT 2.0
@@ -41,6 +42,7 @@
 #define PBR_ENV_AMBIENT_DEFAULT 1
 #define PBR_SPECULAR_AO_HACK_DEFAULT 1
 #define PBR_NO_AMBENVGUESS_DEFAULT 0
+#define PBR_EDGE_NORMAL_HACK_DEFAULT 1
 #endif
 
 // bypass all PBR logic and use vanilla shading
@@ -109,7 +111,7 @@
 #define PBR_SPECULAR_AO_HACK PBR_SPECULAR_AO_HACK_DEFAULT
 
 // bias normals away from edges when doing specular enegy compensation
-#define PBR_EDGE_NORMAL_HACK 1
+#define PBR_EDGE_NORMAL_HACK PBR_EDGE_NORMAL_HACK_DEFAULT
 
 // assume color values are always positive, including lights.
 // this is wrong, but makes things faster.
@@ -310,6 +312,10 @@ vec3 fast_sign(vec3 x)
 
 vec3 to_linear(vec3 color)
 {
+#if PBR_ASSUME_COLORS_POSITIVE
+    if (GAMMA == 2.0)
+        return color*color;
+#endif
     if (GAMMA == 2.0)
         return color*abs(color);
     if (GAMMA == 1.0)
@@ -339,6 +345,7 @@ vec3 perLightPBR(float alpha, vec3 diffuseColor, vec3 diffuseVertexColor, vec3 a
     float lightIncidence = dot(normalDir, lightDir);
     float baseIncidence = lightIncidence;
     
+    // FIXME: what was this originally for?
     if (dot(lightColor, vec3(1.0)) < 0.0)
         ambientBias += lightColor * max(0.0, baseIncidence) * falloff;
     
@@ -354,7 +361,7 @@ vec3 perLightPBR(float alpha, vec3 diffuseColor, vec3 diffuseVertexColor, vec3 a
     // (also, do it if this light is the sun OR we're indoors)
     if (radius < 0.0 || indoors)
     {
-        lightColor *= diffuseVertexColor ;
+        lightColor *= diffuseVertexColor;
     }
     else
 #endif
@@ -366,7 +373,7 @@ vec3 perLightPBR(float alpha, vec3 diffuseColor, vec3 diffuseVertexColor, vec3 a
     vec3 fresnel = fresnelSchlick(max(dot(halfDir, viewDir), 0.0), f0, f90);
     float specular = BRDF(normalDir, viewDir, lightDir, halfDir, roughness);
 #else
-    vec3 fresnel = f0;
+    vec3 fresnel = 0.0;
     float specular = 0.0;
 #endif
     
@@ -382,31 +389,32 @@ vec3 perLightPBR(float alpha, vec3 diffuseColor, vec3 diffuseVertexColor, vec3 a
     baseIncidence *= clamp(-8.0 * (1.0 - 0.3) * eyeCosine + 1.0, 0.3, 1.0);
 #endif
     
-    // reduce specularity by incidence against plane normal to conserve energy
+    if (baseIncidence == 0.0)
+        return light;
     
     float adjust = baseIncidence;
     #if PBR_EDGE_NORMAL_HACK
+        // reduce specularity by incidence against plane normal to conserve energy
         adjust = clamp((adjust-0.07)*4.0, 0.0, adjust);
     #endif
-    if (adjust == 0.0)
-        return light;
     specular *= adjust;
 
 #if DO_PBR
-    float lambert = baseIncidence * (falloff * (1.0/PI));
+    float lambert = baseIncidence * (1.0/PI) * falloff;
     
     #if PBR_DIFFUSE_BURLEY || PBR_DIFFUSE_BURLEY_APPROX
     lambert = Burley(lightDir, normalDir, viewDir, halfDir, baseIncidence, roughness) * (falloff * (1.0/PI));
     #endif
     
-    vec3 diffuseFraction = lambert * shadowing;
+    vec3 diff = diffuseColor * lambert  * (lightColor * shadowing) * (1.0 - fresnel) * (1.0 - metallicity);
+    vec3 spec = vec3(1.0)    * specular * (lightColor * shadowing) * fresnel;
+    // the specular term was already divided by pi in the BRDF function (distGGX specifically)
+    // likewise, metallicity was taken into account when calculating the f0 component for specularity
     
-    vec3 diff = diffuseColor * diffuseFraction  * lightColor * (1.0 - fresnel) * (1.0 - metallicity);
-    
-    vec3 spec = vec3(1.0)    * specular * shadowing * lightColor * fresnel;
     if (radius >= 0.0)
     {
         //spec *= falloff;
+        
         // always use quadratic falloff for specularity
         float ref_falloff = clamp(1.0/(PBR_FALLOFF_REF_DISTANCE * PBR_FALLOFF_REF_DISTANCE), 0.0, 1.0);
         float falloff_mod = standard_falloff*(1.0/ref_falloff);
@@ -417,11 +425,10 @@ vec3 perLightPBR(float alpha, vec3 diffuseColor, vec3 diffuseVertexColor, vec3 a
 #endif
         
         falloff_mod *= LIGHT_STRENGTH_POINT_SPECULAR;
-        spec *= falloff_mod/(lightDistance * lightDistance);
-        
         // fade out at end of bounding radius
-        spec *= min(1.0, cutoff*2.0);
-        //spec *= cutoff;
+        falloff_mod *= min(1.0, cutoff*2.0);
+        
+        spec *= falloff_mod/(lightDistance * lightDistance);
     }
     else
     {
@@ -435,7 +442,7 @@ vec3 perLightPBR(float alpha, vec3 diffuseColor, vec3 diffuseVertexColor, vec3 a
     light += spec;
 #else
     float lambert = baseIncidence * falloff;
-    light += diffuseColor * lambert * lightColor * shadowing;
+    light += diffuseColor * lambert * (lightColor * shadowing);
 #endif
     return light;
 }
@@ -634,7 +641,7 @@ vec3 doLightingPBR(float alpha, vec3 diffuseColor, vec3 diffuseVertexColor, vec3
         ambient = to_linear(ambient);
         vec3 lightColor = to_linear(diffuse * LIGHT_STRENGTH_POINT);
         
-        light += perLightPBR(alpha, diffuseColor, diffuseVertexColor, ambientColor, vec3(1.0), normal, viewDir, lightDir, lightDistance, radius, falloff, standard_falloff, cutoff, ambient, lightColor, metallicity, roughness, ao, f0, f90, indoors, ambientBias);
+        light += perLightPBR(alpha, diffuseColor, diffuseVertexColor, ambientColor, vec3(1.0), normal, viewDir, lightDir, lightDistance, abs(radius) + 0.0001, falloff, standard_falloff, cutoff, ambient, lightColor, metallicity, roughness, ao, f0, f90, indoors, ambientBias);
     }
     
     light += perAmbientPBR(diffuseColor, ambientColor, ambientBias, ambientAdjust, ao, metallicity, roughness, normal, viewDir, f0, f90);
