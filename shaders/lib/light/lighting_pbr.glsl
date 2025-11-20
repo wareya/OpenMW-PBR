@@ -169,7 +169,7 @@ float lcalcCutoff_pbr(int lightIndex, float lightDistance)
 float lcalcIlluminationNoCutoff_pbr(int lightIndex, float dist)
 {
     float illumination = 1.0 / (lcalcConstantAttenuation(lightIndex) + lcalcLinearAttenuation(lightIndex) * dist + lcalcQuadraticAttenuation(lightIndex) * dist * dist);
-    return clamp(illumination, 0.0, 1.0);
+    return illumination;
 }
 
 float fresnelFactorSchlick(float incidence)
@@ -349,7 +349,7 @@ vec3 perLightPBR(float alpha, vec3 diffuseColor, vec3 diffuseVertexColor, vec3 a
     lightColor = max(lightColor, vec3(0.0));
     falloff = max(falloff, 0.0);
     
-#if PBR_VERTEX_COLOR_HACK
+#if PBR_VERTEX_COLOR_HACK && DO_PBR
     // the main use of vertex colors in MW assets is as a GI approximation, so make it affect light instead of diffuse
     // (otherwise darkened areas get a weird haze)
     // (also, do it if this light is the sun OR we're indoors)
@@ -435,7 +435,7 @@ vec3 perLightPBR(float alpha, vec3 diffuseColor, vec3 diffuseVertexColor, vec3 a
     light += diffuseColor * ambientColor * falloff * ao * ambientLightColor;
 #else
     float lambert = baseIncidence * falloff;
-    light += diffuseColor * lambert * lightColor;
+    light += diffuseColor * lambert * lightColor * shadowing;
     light += diffuseColor * ambientColor * falloff * ao * ambientLightColor;
 #endif
     return light;
@@ -446,7 +446,7 @@ uniform mat4 osg_ViewMatrixInverse;
 // replace ambient with a quasi horizon-and-sky-and-ground reflection
 vec3 ambientGuess(float height, vec3 ambientTerm, float roughness)
 {
-#if PBR_NO_AMBIENT_ENV_GUESS
+#if PBR_NO_AMBIENT_ENV_GUESS || !DO_PBR
     return ambientTerm;
 #endif
     //float t = clamp(height/(roughness*roughness + 0.01), -1.0, 1.0);
@@ -548,7 +548,7 @@ vec3 doLightingPBR(float alpha, vec3 diffuseColor, vec3 diffuseVertexColor, vec3
 #endif
     
     diffuseColor = to_linear(diffuseColor);
-#if PBR_VERTEX_COLOR_HACK_ALT
+#if PBR_VERTEX_COLOR_HACK_ALT && DO_PBR
     vec3 oldVC = diffuseVertexColor;
     diffuseVertexColor = mix(diffuseVertexColor, vec3(1.0), 0.33);
     ambientColor *= diffuseVertexColor / (oldVC + vec3(0.01));
