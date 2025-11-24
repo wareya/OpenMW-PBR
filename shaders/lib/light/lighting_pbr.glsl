@@ -424,8 +424,7 @@ vec3 perLightPBR(float alpha, vec3 diffuseColor, vec3 diffuseVertexColor, vec3 a
         falloff_mod = 2000.0;
 #endif
         
-        //falloff_mod *= mix(LIGHT_STRENGTH_POINT_SPECULAR, 1.0, metallicity);
-        falloff_mod *= LIGHT_STRENGTH_POINT_SPECULAR;
+        falloff_mod *= mix(LIGHT_STRENGTH_POINT_SPECULAR, 1.0, metallicity);
         
         // fade out at end of bounding radius
         falloff_mod *= min(1.0, cutoff*2.0);
@@ -434,8 +433,7 @@ vec3 perLightPBR(float alpha, vec3 diffuseColor, vec3 diffuseVertexColor, vec3 a
     }
     else
     {
-        //spec *= mix(LIGHT_STRENGTH_SUN_SPECULAR, 1.0, metallicity);
-        spec *= LIGHT_STRENGTH_SUN_SPECULAR;
+        spec *= mix(LIGHT_STRENGTH_SUN_SPECULAR, 1.0, metallicity);
     }
     #if PBR_SPECULAR_AO_HACK
     spec = mix(spec, spec*ao, 1.0-lightIncidence*lightIncidence);
