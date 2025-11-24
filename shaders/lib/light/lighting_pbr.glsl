@@ -95,7 +95,7 @@
 // whether to use specular math for non-metallic ambience
 // (metallic ambience always uses specular math)
 // looks bad because vanilla models have bad vertex normals + the ambient environment map estimation is bad
-#define PBR_SPECULAR_AMBIENT 0
+#define PBR_SPECULAR_AMBIENT 1
 // similar but for the diffuse term. looks good enough to enable by default.
 #define PBR_ENV_AMBIENT PBR_ENV_AMBIENT_DEFAULT
 // disable the "horizon line" ambient environment guess
@@ -576,7 +576,11 @@ vec3 doLightingPBR(float alpha, vec3 diffuseColor, vec3 diffuseVertexColor, vec3
     
     vec3 f90 = vec3(1.0) + specularTint;
     vec3 f0 = vec3(f0_scalar) * f90;
-    f0 = mix(f0, diffuseColor, metallicity);
+    
+    // should be:
+    f0 = mix(f0, max(f0, diffuseColor), metallicity);
+    // but game engines (including godot) usually do:
+    //f0 = mix(f0, diffuseColor, metallicity);
     
     vec3 ambientBias = vec3(0.0);
     
