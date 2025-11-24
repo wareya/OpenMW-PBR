@@ -578,9 +578,11 @@ vec3 doLightingPBR(float alpha, vec3 diffuseColor, vec3 diffuseVertexColor, vec3
     vec3 f0 = vec3(f0_scalar) * f90;
     
     // should be:
-    f0 = mix(f0, max(f0, diffuseColor), metallicity);
+    //f0 = mix(f0, max(f0, diffuseColor), metallicity);
     // but game engines (including godot) usually do:
     //f0 = mix(f0, diffuseColor, metallicity);
+    // compromise:
+    f0 = mix(f0, max(f0 * 0.25, diffuseColor), metallicity);
     
     vec3 ambientBias = vec3(0.0);
     
