@@ -424,7 +424,9 @@ vec3 perLightPBR(float alpha, vec3 diffuseColor, vec3 diffuseVertexColor, vec3 a
         falloff_mod = 2000.0;
 #endif
         
+        //falloff_mod *= mix(LIGHT_STRENGTH_POINT_SPECULAR, 1.0, metallicity);
         falloff_mod *= LIGHT_STRENGTH_POINT_SPECULAR;
+        
         // fade out at end of bounding radius
         falloff_mod *= min(1.0, cutoff*2.0);
         
@@ -432,6 +434,7 @@ vec3 perLightPBR(float alpha, vec3 diffuseColor, vec3 diffuseVertexColor, vec3 a
     }
     else
     {
+        //spec *= mix(LIGHT_STRENGTH_SUN_SPECULAR, 1.0, metallicity);
         spec *= LIGHT_STRENGTH_SUN_SPECULAR;
     }
     #if PBR_SPECULAR_AO_HACK
@@ -509,17 +512,14 @@ vec3 perAmbientPBR(vec3 diffuseColor, vec3 ambientColor, vec3 ambientBias, vec3 
         
         #if !PBR_NO_AMBIENT_ENV_GUESS
         // extremely awful terible estimation of the environmental BRDF, non-hacky seen here:
-        // https://google.github.io/filament/Filament.html#toc5.3.4.3
+        // https://google.github.io/filament/Filament.md.html#toc5.3.4.3
         // https://learnopengl.com/PBR/IBL/Specular-IBL
         // red is f0, green is f90
         
         float inv_vdot = max(0.0, 1.0 - vdot*2.0);
         float bad_dfg = inv_roughness_2 * (inv_vdot * inv_vdot);
+        float f90_part = bad_dfg;
         float f0_part = mix((1.0 - bad_dfg), 0.5, roughness);
-        float f90_part = min(bad_dfg, inv_roughness_2*inv_roughness_2);
-        
-        // seems to actually make things worse for some reason
-        //f90_part = min(f90_part, max(0.5, 10.9 - inv_vdot*10.0 - roughness * 7.0));
         
         #else
         float inv_vdot = 1.0 - vdot;
@@ -528,10 +528,8 @@ vec3 perAmbientPBR(vec3 diffuseColor, vec3 ambientColor, vec3 ambientBias, vec3 
         float f0_part = (1.0 - f90_part)*0.8;
         #endif
         
-        f90_part = min(f90_part, 1.0 - f0_part);
-
 #if PBR_METAL_F90_DARKENING_HACK
-        f90 *= sqrt(diffuseColor) * 0.9 + 0.1;
+        f90 *= sqrt(diffuseColor) * 0.8 + 0.2;
 #endif
         
         light += ambientAdjust * ambientTerm * ao * (f0*f0_part + f90*f90_part) * metallicity;
@@ -539,11 +537,7 @@ vec3 perAmbientPBR(vec3 diffuseColor, vec3 ambientColor, vec3 ambientBias, vec3 
 #if PBR_SPECULAR_AMBIENT
         light += diffuseColor * ambientAdjust * ambientDiffuseTerm * ao * (1.0 - metallicity) * f0_part;
         
-        // We don't have proper environment maps, so the specular "ambient term" doesn't respect objects occluding away the ambient light. As a hack, make it half as bright, so that it's less intrusive in dark areas.
-        // For now the fudge factor is gentle and keeps things somewhat the same brightness.
-        float fudge_factor = 0.6;
-        
-        light += ambientAdjust * ambientTerm * ao * (1.0 - metallicity) * f90_part * fudge_factor;
+        light += ambientAdjust * ambientTerm * ao * (1.0 - metallicity) * f90_part * LIGHT_STRENGTH_POINT_SPECULAR;
 #endif
     }
 
