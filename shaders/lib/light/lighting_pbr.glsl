@@ -95,7 +95,7 @@
 // whether to use specular math for non-metallic ambience
 // (metallic ambience always uses specular math)
 // looks bad because vanilla models have bad vertex normals + the ambient environment map estimation is bad
-#define PBR_SPECULAR_AMBIENT 1
+#define PBR_SPECULAR_AMBIENT 0
 // similar but for the diffuse term. looks good enough to enable by default.
 #define PBR_ENV_AMBIENT PBR_ENV_AMBIENT_DEFAULT
 // disable the "horizon line" ambient environment guess
