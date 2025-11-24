@@ -57,7 +57,7 @@
 #define DEBUG_SHOW_AO 0
 
 // prevent roughness from being less than this amount (reduces speckling on bad textures)
-#define PBR_MAT_ROUGHNESS_FLOOR 0.05
+#define PBR_MAT_ROUGHNESS_FLOOR 0.01
 
 // #define NORMAL_RECONSTRUCT_Z 0
 // NO LONGER SUPPORTED: this is now an openmw option
@@ -96,7 +96,7 @@
 // (metallic ambience always uses specular math)
 // looks bad because vanilla models have bad vertex normals + the ambient environment map estimation is bad
 #define PBR_SPECULAR_AMBIENT 0
-// similar but for the diffuse term
+// similar but for the diffuse term. looks good enough to enable by default.
 #define PBR_ENV_AMBIENT PBR_ENV_AMBIENT_DEFAULT
 // disable the "horizon line" ambient environment guess
 #define PBR_NO_AMBIENT_ENV_GUESS PBR_NO_AMBENVGUESS_DEFAULT
@@ -537,8 +537,13 @@ vec3 perAmbientPBR(vec3 diffuseColor, vec3 ambientColor, vec3 ambientBias, vec3 
         light += ambientAdjust * ambientTerm * ao * (f0*f0_part + f90*f90_part) * metallicity;
         
 #if PBR_SPECULAR_AMBIENT
-        ambientTerm = ambientGuess(reflectionWorld.z, ambientTermOrig, roughness * 0.5 + 0.5); // hack
-        light += ambientAdjust * ambientTerm * ao * (diffuseColor*(1.0-f90_part) + f90*f90_part * diffuseColor) * (1.0 - metallicity);
+        light += diffuseColor * ambientAdjust * ambientDiffuseTerm * ao * (1.0 - metallicity) * f0_part;
+        
+        // We don't have proper environment maps, so the specular "ambient term" doesn't respect objects occluding away the ambient light. As a hack, make it half as bright, so that it's less intrusive in dark areas.
+        // For now the fudge factor is gentle and keeps things somewhat the same brightness.
+        float fudge_factor = 0.6;
+        
+        light += ambientAdjust * ambientTerm * ao * (1.0 - metallicity) * f90_part * fudge_factor;
 #endif
     }
 
@@ -681,7 +686,7 @@ void specMapToPBR(vec4 specTex, out float metallicity, out float roughness, out 
         roughness = specTex.g;
     #endif
     roughness *= roughness;
-    roughness = clamp(roughness, PBR_MAT_ROUGHNESS_FLOOR, 1.0);
+    roughness = max(roughness, PBR_MAT_ROUGHNESS_FLOOR);
     
     #if DO_PBR
         ao = specTex.b;
