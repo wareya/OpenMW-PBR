@@ -11,7 +11,7 @@
 #define POM_MODE_EXT2 2 // force bi/tangent to be exactly perpendicular to normal (not each other)
 #define POM_MODE_EXT3 3 // force normal to be perpendicular to triangle (instead of vertex)
 
-#define POM_MODE POM_MODE_EXT3
+#define POM_MODE POM_MODE_EXT2
 
 float det(mat2 matrix)
 {
