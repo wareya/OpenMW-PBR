@@ -6,10 +6,10 @@
 #define PARALLAX_SCALE 0.04
 #define PARALLAX_BIAS -(PARALLAX_SCALE*0.5)
 
-#define POM_MODE_BASIC 0
-#define POM_MODE_EXT1 1 // as-is normal and bi/tangent
-#define POM_MODE_EXT2 2 // force bi/tangent to be exactly perpendicular to normal (not each other)
-#define POM_MODE_EXT3 3 // force normal to be perpendicular to triangle (instead of vertex)
+#define POM_MODE_BASIC 0 // vertex normal and vertex bi/tangent
+#define POM_MODE_EXT1 1 // derive bi/tangent from derivative UV info
+#define POM_MODE_EXT2 2 // ext1, but force bi/tangent to be exactly perpendicular to normal (not each other)
+#define POM_MODE_EXT3 3 // ext1, but force normal to be perpendicular to triangle (instead of vertex)
 
 #define POM_MODE POM_MODE_EXT2
 
