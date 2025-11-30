@@ -148,7 +148,9 @@
 #define PBR_DIFFUSE_OREN_NAYAR 0
 #define PBR_DIFFUSE_OREN_NAYAR_APPROX 0
 // brighten the ON luminance function slightly to compensate for non-PBR textures having roughness-darkened albedos
-#define PBR_DIFFUSE_OREN_NAYAR_ALBEDO_COMPENSATION 1.1
+#define PBR_DIFFUSE_OREN_NAYAR_ALBEDO_COMPENSATION 1.2
+// L2 term strength (non-approx only)
+#define PBR_OREN_NAYAR_INTERREFLECTION_STRENGTH 0.17
 
 #if DO_PBR && !PBR_BYPASS
 #define GAMMA PBR_GAMMA
@@ -291,6 +293,7 @@ vec3 OrenNayarNotrig(vec3 albedo, vec3 l, vec3 n, vec3 v, vec3 h, float lambert,
     // It is not based on any other shader. It is based on the original Oren-Nayar paper.
     if (lambert <= 0.0) return vec3(0.0);
     
+    r *= PI/2.0;
     float r2 = r*r;
     
     // big: polar
@@ -341,9 +344,9 @@ vec3 OrenNayarNotrig(vec3 albedo, vec3 l, vec3 n, vec3 v, vec3 h, float lambert,
     ;
     
     // squaringness of albedo comes from how the output of this function is used (it's factored out)
-    vec3 l2 = 0.17 * albedo * lambert * (r2/(r2+0.13)) * (1.0 - cos_small_ir_delta * twobeta_over_pi*twobeta_over_pi);
+    vec3 l2 = PBR_OREN_NAYAR_INTERREFLECTION_STRENGTH * albedo * lambert * (r2/(r2+0.13)) * (1.0 - cos_small_ir_delta * twobeta_over_pi*twobeta_over_pi);
     
-    return vec3(l1) + l2;
+    return min(vec3(1.0), (vec3(l1) + l2) * mix(1.0, PBR_DIFFUSE_OREN_NAYAR_ALBEDO_COMPENSATION, r));
     // four total sqrts
 }
 
@@ -351,6 +354,7 @@ vec3 OrenNayarApprox(vec3 albedo, vec3 lightDir, vec3 normalDir, vec3 viewDir, v
 {
     if (lightInsolation < 0.0) return vec3(0.0);
     
+    roughness *= PI/2.0;
     float c1 = 0.625;
     
     float fake_c2 = dot(reject(lightDir, normalDir), reject(viewDir, normalDir))*0.4;
@@ -359,7 +363,7 @@ vec3 OrenNayarApprox(vec3 albedo, vec3 lightDir, vec3 normalDir, vec3 viewDir, v
         c1 +
         fake_c2 * fake_tan +
         0.0
-    ), roughness));
+    ) * PBR_DIFFUSE_OREN_NAYAR_ALBEDO_COMPENSATION, roughness));
 }
 
 float BRDF(vec3 normalDir, vec3 viewDir, vec3 lightDir, vec3 halfDir, float roughness)
@@ -499,11 +503,11 @@ vec3 perLightPBR(float alpha, vec3 diffuseColor, vec3 diffuseVertexColor, vec3 a
     #endif
     #if PBR_DIFFUSE_OREN_NAYAR
     lambert = OrenNayarNotrig(diffuseColor, lightDir, normalDir, viewDir, halfDir, baseIncidence, roughness*roughness)
-        * (falloff * (1.0/PI)) * PBR_DIFFUSE_OREN_NAYAR_ALBEDO_COMPENSATION;
+        * (falloff * (1.0/PI));
     #endif
     #if PBR_DIFFUSE_OREN_NAYAR_APPROX
     lambert = OrenNayarApprox(diffuseColor, lightDir, normalDir, viewDir, halfDir, baseIncidence, roughness*roughness)
-        * (falloff * (1.0/PI)) * PBR_DIFFUSE_OREN_NAYAR_ALBEDO_COMPENSATION;
+        * (falloff * (1.0/PI));
     #endif
     
     vec3 diff = diffuseColor * lambert  * (lightColor * shadowing) * (1.0 - fresnel) * (1.0 - metallicity);
