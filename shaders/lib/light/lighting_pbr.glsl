@@ -22,7 +22,7 @@
 #if PBR_HIGHPERF
 #define PBR_GAMMA_DEFAULT 2.0
 #define PBR_RANGEMUL_DEFAULT 1.0
-#define PBR_ACP_DEFAULT 1
+#define PBR_ACP_DEFAULT 0
 #define PBR_AAO_DEFAULT 0
 #define PBR_SHITTYBRDF 1
 #define PBR_FALLOFF_NO_COMPENSATION 1
@@ -144,6 +144,12 @@
 // slightly faster approximation. performance half-ish way between lambret and burley?
 #define PBR_DIFFUSE_BURLEY_APPROX 0
 
+// same, but for oren-nayar instead of burley
+#define PBR_DIFFUSE_OREN_NAYAR 0
+#define PBR_DIFFUSE_OREN_NAYAR_APPROX 0
+// brighten the ON luminance function slightly to compensate for non-PBR textures having roughness-darkened albedos
+#define PBR_DIFFUSE_OREN_NAYAR_ALBEDO_COMPENSATION 1.1
+
 #if DO_PBR && !PBR_BYPASS
 #define GAMMA PBR_GAMMA
 #else
@@ -206,20 +212,20 @@ float geoSchlickGGX(float incidence, float k)
     incidence += 0.00004;
     return incidence / mix(incidence, 1.0, k);
 }
-float geoSmithApprox(float viewIncidence, float lightIncidence, float r)
+float geoSmithApprox(float viewIncidence, float lightInsolation, float r)
 {
     float k = r + 1.0;
-    float j = viewIncidence * lightIncidence;
+    float j = viewIncidence * lightInsolation;
     //j = 1.0 - j;
     //j *= j;
     //j = 1.0 - j;
     return j * 3.0 / k;
 }
-float geoSmith(float viewIncidence, float lightIncidence, float r)
+float geoSmith(float viewIncidence, float lightInsolation, float r)
 {
     r += 1.0;
     float k = (r * r) * (1.0/8.0);
-    return geoSchlickGGX(viewIncidence, k) * geoSchlickGGX(lightIncidence, k);
+    return geoSchlickGGX(viewIncidence, k) * geoSchlickGGX(lightInsolation, k);
 }
 
 // faithful adaptation of the math in the GLTF2 spec
@@ -231,33 +237,33 @@ float geoSmithGLTFDenom(float incidence, float roughness)
 float geoSmithGLTF(vec3 normalDir, vec3 viewDir, vec3 lightDir, vec3 halfDir, float roughness)
 {
     float halfIncidence  = (dot(normalDir,  halfDir));
-    float lightIncidence = (dot(normalDir, lightDir));
+    float lightInsolation = (dot(normalDir, lightDir));
     float viewIncidence  = (dot(normalDir,  viewDir));
     float halfLight      = (dot(lightDir ,  halfDir));
     float halfView       = (dot(viewDir  ,  halfDir));
     
-    float a = halfLight > 0.0 ? geoSmithGLTFDenom(lightIncidence, roughness) : 0.0;
+    float a = halfLight > 0.0 ? geoSmithGLTFDenom(lightInsolation, roughness) : 0.0;
     float b = halfView > 0.0 ? geoSmithGLTFDenom(viewIncidence, roughness) : 0.0;
     
-    return (a * b) / (4.0 * abs(lightIncidence) * abs(viewIncidence));
+    return (a * b) / (4.0 * abs(lightInsolation) * abs(viewIncidence));
 }
 
 // godot-style
-float geoGGX(float viewIncidence, float lightIncidence, float r)
+float geoGGX(float viewIncidence, float lightInsolation, float r)
 {
-    float j = viewIncidence * lightIncidence;
-    float i = viewIncidence + lightIncidence;
+    float j = viewIncidence * lightInsolation;
+    float i = viewIncidence + lightInsolation;
     return 0.5 / (mix(2.0 * j, i, r) + 0.1);
 }
 
-float Burley(vec3 lightDir, vec3 normalDir, vec3 viewDir, vec3 halfDir, float lightIncidence, float roughness)
+float Burley(vec3 lightDir, vec3 normalDir, vec3 viewDir, vec3 halfDir, float lightInsolation, float roughness)
 {
     #if PBR_DIFFUSE_BURLEY_APPROX
     // performance hack
     float halfNormal = max(dot(normalDir, halfDir), 0.0);
     float j = 1.0 - halfNormal;
     float Fd = 1.0 + roughness*1.2*(j*j*(j*j));
-    return Fd * Fd * lightIncidence;
+    return Fd * Fd * lightInsolation;
     #else
     // real burley
     float halfLight = max(dot(lightDir, halfDir), 0.0);
@@ -265,15 +271,97 @@ float Burley(vec3 lightDir, vec3 normalDir, vec3 viewDir, vec3 halfDir, float li
     float halfView = max(dot(viewDir, halfDir), 0.0);
     float viewIncidence = max(dot(normalDir, viewDir), 0.0);
     float FdV = 1.0 + FD90_minus_1 * fresnelFactorSchlick(viewIncidence);
-    float FdL = 1.0 + FD90_minus_1 * fresnelFactorSchlick(lightIncidence);
-    return FdV * FdL * lightIncidence;
+    float FdL = 1.0 + FD90_minus_1 * fresnelFactorSchlick(lightInsolation);
+    return FdV * FdL * lightInsolation;
     #endif
+}
+
+vec3 project(vec3 u, vec3 v)
+{
+    return dot(u, v) / dot(v, v) * v;
+}
+vec3 reject(vec3 u, vec3 v)
+{
+    return u - project(u, v);
+}
+
+float OrenNayarNotrig(vec3 l, vec3 n, vec3 v, vec3 h, float lambert, float r)
+{
+    // This particular function is CC0 (public domain), and there are no patents on it.
+    // It is not based on any other shader. It is based on the original Oren-Nayar paper.
+    if (lambert <= 0.0) return 0.0;
+    
+    float r2 = r*r;
+    
+    // big: polar
+    // small: azimuthal
+    
+    vec3 l_pn = normalize(reject(l, n)); // sqrts: 1
+    vec3 v_pn = normalize(reject(v, n)); // sqrts: 2
+    float cos_small_ir_delta = dot(l_pn, v_pn);
+    
+    float cos_big_i = dot(l, n);
+    float cos_big_r = dot(v, n);
+    cos_big_r = abs(cos_big_r); // some fragment normals face "into" the screen
+    
+    float cos_alpha = min(cos_big_r, cos_big_i);
+    float cos_beta = max(cos_big_r, cos_big_i);
+    
+    float sin_alpha = sqrt(1.0 - cos_alpha*cos_alpha); // sqrts: 3
+    float sin_beta = sqrt(1.0 - cos_beta*cos_beta); // sqrts: 4
+    float tan_beta = sin_beta/cos_beta;
+    
+    //float beta_approx = (PI/2.0)*(1.0-cos_beta); // WORSE visual result than the following. for some reason.
+    //float alpha_approx = (PI/2.0)*(1.0-cos_alpha); // WORSE visual result than the following. for some reason.
+    
+    float beta_approx = (PI/2.0)-cos_beta; // lol. lmao. i mean it works, but...
+    float alpha_approx = (PI/2.0)-cos_alpha; // lol. lmao i mean it works, but...
+    // more accurate approximation, but seemingly visually identical in my tests to the above:
+    //float beta_approx = (PI/2.0)-cos_beta-(cos_beta*cos_beta*cos_beta*(PI/6.0));
+    //float alpha_approx = (PI/2.0)-cos_alpha-(cos_alpha*cos_alpha*cos_alpha*(PI/6.0));
+    
+    float c1 = 1.0 - 0.5*(r2 / (r2 + 0.33));
+    
+    float _adjust =
+        (cos_small_ir_delta >= 0.0) ? 0.0 :
+        (2.0 * beta_approx / PI);
+    float c2 = 0.45 * (r2/(r2+0.09)) * (sin_alpha - _adjust*_adjust*_adjust);
+    
+    float _temp = 4.0 * alpha_approx * beta_approx / (PI*PI);
+    float c3 = 0.125 * (r2/(r2+0.09)) * _temp*_temp;
+    
+    float cos_avg_approx = (cos_beta + cos_alpha)*0.5;
+    float sin_avg_approx = (sin_beta + sin_alpha)*0.5;
+    float tan_avg_approx = sin_avg_approx / cos_avg_approx;
+    
+    return lambert * (
+        c1 +
+        cos_small_ir_delta * c2 * tan_beta +
+        (1.0 - abs(cos_small_ir_delta)) * c3 * tan_avg_approx +
+        0.0)
+    ;
+    // four total sqrts
+}
+
+float OrenNayarApprox(vec3 lightDir, vec3 normalDir, vec3 viewDir, vec3 halfDir, float lightInsolation, float roughness)
+{
+    if (lightInsolation < 0.0) return 0.0;
+    
+    float c1 = 0.625;
+    
+    float fake_c2 = dot(reject(lightDir, normalDir), reject(viewDir, normalDir))*0.4;
+    float fake_tan = 1.0/max(dot(halfDir, normalDir), 0.2);
+    return mix(lightInsolation, lightInsolation * (
+        c1 +
+        fake_c2 * fake_tan +
+        0.0
+    ), roughness);
 }
 
 float BRDF(vec3 normalDir, vec3 viewDir, vec3 lightDir, vec3 halfDir, float roughness)
 {
-    float lightIncidence = max(dot(normalDir, lightDir), 0.0);
-    if (lightIncidence <= 0.0)
+    float lightInsolation = max(dot(normalDir, lightDir), 0.0);
+    if (lightInsolation <= 0.0)
         return 0.0;
     
     float halfIncidence  = max(dot(normalDir,  halfDir), 0.0);
@@ -283,15 +371,15 @@ float BRDF(vec3 normalDir, vec3 viewDir, vec3 lightDir, vec3 halfDir, float roug
     
 #if PBR_SHITTYBRDF
     float NDF = distGGXApprox(halfIncidence, roughness);
-    float geo = geoGGX(lightIncidence, viewIncidence, roughness) * 0.5;
+    float geo = geoGGX(lightInsolation, viewIncidence, roughness) * 0.5;
 #else
     float NDF = distGGX(halfIncidence, roughness);
-    float geo = geoSmith(viewIncidence, lightIncidence, roughness);
-    geo = geo / (4.0 * viewIncidence * lightIncidence + 0.0001);
+    float geo = geoSmith(viewIncidence, lightInsolation, roughness);
+    geo = geo / (4.0 * viewIncidence * lightInsolation + 0.0001);
 #endif
     
 #if PBR_GODOT_BRDF && !PBR_SHITTYBRDF
-    geo = geoGGX(lightIncidence, viewIncidence, roughness);
+    geo = geoGGX(lightInsolation, viewIncidence, roughness);
 #endif
 
 #if PBR_GLTF2_BRDF && !PBR_HIGHPERF
@@ -342,8 +430,8 @@ vec3 perLightPBR(float alpha, vec3 diffuseColor, vec3 diffuseVertexColor, vec3 a
     vec3 normalDir = normal;
     vec3 halfDir = normalize(viewDir + lightDir);
     
-    float lightIncidence = dot(normalDir, lightDir);
-    float baseIncidence = lightIncidence;
+    float lightInsolation = dot(normalDir, lightDir);
+    float baseIncidence = lightInsolation;
     
     // FIXME: what was this originally for?
     if (dot(lightColor, vec3(1.0)) < 0.0)
@@ -400,10 +488,18 @@ vec3 perLightPBR(float alpha, vec3 diffuseColor, vec3 diffuseVertexColor, vec3 a
     specular *= adjust;
 
 #if DO_PBR
-    float lambert = baseIncidence * (1.0/PI) * falloff;
+    float lambert = baseIncidence * (falloff * (1.0/PI));
     
     #if PBR_DIFFUSE_BURLEY || PBR_DIFFUSE_BURLEY_APPROX
     lambert = Burley(lightDir, normalDir, viewDir, halfDir, baseIncidence, roughness) * (falloff * (1.0/PI));
+    #endif
+    #if PBR_DIFFUSE_OREN_NAYAR
+    lambert = OrenNayarNotrig(lightDir, normalDir, viewDir, halfDir, baseIncidence, roughness*roughness)
+        * (falloff * (1.0/PI)) * PBR_DIFFUSE_OREN_NAYAR_ALBEDO_COMPENSATION;
+    #endif
+    #if PBR_DIFFUSE_OREN_NAYAR_APPROX
+    lambert = OrenNayarApprox(lightDir, normalDir, viewDir, halfDir, baseIncidence, roughness*roughness)
+        * (falloff * (1.0/PI)) * PBR_DIFFUSE_OREN_NAYAR_ALBEDO_COMPENSATION;
     #endif
     
     vec3 diff = diffuseColor * lambert  * (lightColor * shadowing) * (1.0 - fresnel) * (1.0 - metallicity);
@@ -436,7 +532,7 @@ vec3 perLightPBR(float alpha, vec3 diffuseColor, vec3 diffuseVertexColor, vec3 a
         spec *= mix(LIGHT_STRENGTH_SUN_SPECULAR, 1.0, metallicity);
     }
     #if PBR_SPECULAR_AO_HACK
-    spec = mix(spec, spec*ao, 1.0-lightIncidence*lightIncidence);
+    spec = mix(spec, spec*ao, 1.0-lightInsolation*lightInsolation);
     #endif
     // now apply lighting
     light += diff;
