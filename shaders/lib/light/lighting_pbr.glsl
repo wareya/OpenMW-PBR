@@ -285,11 +285,11 @@ vec3 reject(vec3 u, vec3 v)
     return u - project(u, v);
 }
 
-float OrenNayarNotrig(vec3 l, vec3 n, vec3 v, vec3 h, float lambert, float r)
+vec3 OrenNayarNotrig(vec3 albedo, vec3 l, vec3 n, vec3 v, vec3 h, float lambert, float r)
 {
     // This particular function is CC0 (public domain), and there are no patents on it.
     // It is not based on any other shader. It is based on the original Oren-Nayar paper.
-    if (lambert <= 0.0) return 0.0;
+    if (lambert <= 0.0) return vec3(0.0);
     
     float r2 = r*r;
     
@@ -322,9 +322,8 @@ float OrenNayarNotrig(vec3 l, vec3 n, vec3 v, vec3 h, float lambert, float r)
     
     float c1 = 1.0 - 0.5*(r2 / (r2 + 0.33));
     
-    float _adjust =
-        (cos_small_ir_delta >= 0.0) ? 0.0 :
-        (2.0 * beta_approx / PI);
+    float twobeta_over_pi = (2.0 * beta_approx / PI);
+    float _adjust = (cos_small_ir_delta >= 0.0) ? 0.0 : twobeta_over_pi;
     float c2 = 0.45 * (r2/(r2+0.09)) * (sin_alpha - _adjust*_adjust*_adjust);
     
     float _temp = 4.0 * alpha_approx * beta_approx / (PI*PI);
@@ -334,28 +333,33 @@ float OrenNayarNotrig(vec3 l, vec3 n, vec3 v, vec3 h, float lambert, float r)
     float sin_avg_approx = (sin_beta + sin_alpha)*0.5;
     float tan_avg_approx = sin_avg_approx / cos_avg_approx;
     
-    return lambert * (
+    float l1 = lambert * (
         c1 +
         cos_small_ir_delta * c2 * tan_beta +
         (1.0 - abs(cos_small_ir_delta)) * c3 * tan_avg_approx +
         0.0)
     ;
+    
+    // squaringness of albedo comes from how the output of this function is used (it's factored out)
+    vec3 l2 = 0.17 * albedo * lambert * (r2/(r2+0.13)) * (1.0 - cos_small_ir_delta * twobeta_over_pi*twobeta_over_pi);
+    
+    return vec3(l1) + l2;
     // four total sqrts
 }
 
-float OrenNayarApprox(vec3 lightDir, vec3 normalDir, vec3 viewDir, vec3 halfDir, float lightInsolation, float roughness)
+vec3 OrenNayarApprox(vec3 albedo, vec3 lightDir, vec3 normalDir, vec3 viewDir, vec3 halfDir, float lightInsolation, float roughness)
 {
-    if (lightInsolation < 0.0) return 0.0;
+    if (lightInsolation < 0.0) return vec3(0.0);
     
     float c1 = 0.625;
     
     float fake_c2 = dot(reject(lightDir, normalDir), reject(viewDir, normalDir))*0.4;
     float fake_tan = 1.0/max(dot(halfDir, normalDir), 0.2);
-    return mix(lightInsolation, lightInsolation * (
+    return vec3(mix(lightInsolation, lightInsolation * (
         c1 +
         fake_c2 * fake_tan +
         0.0
-    ), roughness);
+    ), roughness));
 }
 
 float BRDF(vec3 normalDir, vec3 viewDir, vec3 lightDir, vec3 halfDir, float roughness)
@@ -488,17 +492,17 @@ vec3 perLightPBR(float alpha, vec3 diffuseColor, vec3 diffuseVertexColor, vec3 a
     specular *= adjust;
 
 #if DO_PBR
-    float lambert = baseIncidence * (falloff * (1.0/PI));
+    vec3 lambert = vec3(baseIncidence * (falloff * (1.0/PI)));
     
     #if PBR_DIFFUSE_BURLEY || PBR_DIFFUSE_BURLEY_APPROX
-    lambert = Burley(lightDir, normalDir, viewDir, halfDir, baseIncidence, roughness) * (falloff * (1.0/PI));
+    lambert = vec3(Burley(lightDir, normalDir, viewDir, halfDir, baseIncidence, roughness) * (falloff * (1.0/PI)));
     #endif
     #if PBR_DIFFUSE_OREN_NAYAR
-    lambert = OrenNayarNotrig(lightDir, normalDir, viewDir, halfDir, baseIncidence, roughness*roughness)
+    lambert = OrenNayarNotrig(diffuseColor, lightDir, normalDir, viewDir, halfDir, baseIncidence, roughness*roughness)
         * (falloff * (1.0/PI)) * PBR_DIFFUSE_OREN_NAYAR_ALBEDO_COMPENSATION;
     #endif
     #if PBR_DIFFUSE_OREN_NAYAR_APPROX
-    lambert = OrenNayarApprox(lightDir, normalDir, viewDir, halfDir, baseIncidence, roughness*roughness)
+    lambert = OrenNayarApprox(diffuseColor, lightDir, normalDir, viewDir, halfDir, baseIncidence, roughness*roughness)
         * (falloff * (1.0/PI)) * PBR_DIFFUSE_OREN_NAYAR_ALBEDO_COMPENSATION;
     #endif
     
