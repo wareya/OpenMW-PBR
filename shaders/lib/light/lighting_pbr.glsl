@@ -147,6 +147,7 @@
 #define PBR_DIFFUSE_BURLEY_APPROX 0
 
 // same, but for oren-nayar instead of burley
+// as described in the original oren-nayar paper. full version (i.e. not the qualitative one).
 #define PBR_DIFFUSE_OREN_NAYAR 0
 #define PBR_DIFFUSE_OREN_NAYAR_APPROX 0
 // brighten the ON luminance function slightly to compensate for non-PBR textures having roughness-darkened albedos
@@ -155,6 +156,7 @@
 #define PBR_OREN_NAYAR_INTERREFLECTION_STRENGTH 0.17
 
 // a variant of oren nayar that works better on non-PBR albedo textures and in non-pathtracer settings
+// as described in the EON paper (arXiv:2410.18026v2)
 #define PBR_DIFFUSE_FUJI_OREN_NAYAR 0
 
 // cartoon mode
@@ -321,7 +323,8 @@ vec3 OrenNayarNotrig(vec3 albedo, vec3 l, vec3 n, vec3 v, vec3 h, float lambert,
     float qj = 0.0;
     float qq = PBR_OREN_NAYAR_INTERREFLECTION_STRENGTH;
     
-    r *= PI/2.0;
+    // approximation of the stddev(slopes) to stddev(angles) conversion for values between 0 and 1
+    r = r - r*r*0.33;
     float r2 = r*r;
     
     // big: polar
@@ -378,11 +381,12 @@ vec3 OrenNayarNotrig(vec3 albedo, vec3 l, vec3 n, vec3 v, vec3 h, float lambert,
     // four total sqrts
 }
 
-vec3 OrenNayarApprox(vec3 albedo, vec3 lightDir, vec3 normalDir, vec3 viewDir, vec3 halfDir, float lightInsolation, float roughness)
+vec3 OrenNayarApprox(vec3 albedo, vec3 lightDir, vec3 normalDir, vec3 viewDir, vec3 halfDir, float lightInsolation, float r)
 {
     if (lightInsolation < 0.0) return vec3(0.0);
     
-    roughness *= PI/2.0;
+    // approximation of the stddev(slopes) to stddev(angles) conversion for values between 0 and 1
+    r = r - r*r*0.33;
     float c1 = 0.625;
     
     float fake_c2 = dot(reject(lightDir, normalDir), reject(viewDir, normalDir))*0.4;
@@ -391,7 +395,7 @@ vec3 OrenNayarApprox(vec3 albedo, vec3 lightDir, vec3 normalDir, vec3 viewDir, v
         c1 +
         fake_c2 * fake_tan +
         0.0
-    ) * PBR_DIFFUSE_OREN_NAYAR_ALBEDO_COMPENSATION, roughness));
+    ) * PBR_DIFFUSE_OREN_NAYAR_ALBEDO_COMPENSATION, r));
 }
 
 float BRDF(vec3 normalDir, vec3 viewDir, vec3 lightDir, vec3 halfDir, float roughness)
