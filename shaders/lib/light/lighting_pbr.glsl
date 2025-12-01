@@ -139,6 +139,8 @@
 // similar to above, but only affects the part of a light pointing towards the camera, and never affects groundcover
 #define PBR_LIGHT_BOUNDING_SPHERE_MULTIPLIER_TOWARDS_CAMERA PBR_RANGEMUL_DEFAULT
 
+
+
 // for debugging. we use lambert because it's cheaper and looks better with non-PBR-intended assets.
 #define PBR_DIFFUSE_BURLEY 0
 // slightly faster approximation. performance half-ish way between lambret and burley?
@@ -148,9 +150,17 @@
 #define PBR_DIFFUSE_OREN_NAYAR 0
 #define PBR_DIFFUSE_OREN_NAYAR_APPROX 0
 // brighten the ON luminance function slightly to compensate for non-PBR textures having roughness-darkened albedos
-#define PBR_DIFFUSE_OREN_NAYAR_ALBEDO_COMPENSATION 1.2
+#define PBR_DIFFUSE_OREN_NAYAR_ALBEDO_COMPENSATION 1.0
 // L2 term strength (non-approx only)
 #define PBR_OREN_NAYAR_INTERREFLECTION_STRENGTH 0.17
+
+// a variant of oren nayar that works better on non-PBR albedo textures and in non-pathtracer settings
+#define PBR_DIFFUSE_FUJI_OREN_NAYAR 0
+
+// cartoon mode
+#define PBR_DIFFUSE_CELSHADE 0
+
+
 
 #if DO_PBR && !PBR_BYPASS
 #define GAMMA PBR_GAMMA
@@ -287,11 +297,29 @@ vec3 reject(vec3 u, vec3 v)
     return u - project(u, v);
 }
 
+// Fuji's final version of Oren Nayar, as described in the EON paper (arXiv:2410.18026v2)
+float FujiOrenNayar(vec3 l, vec3 n, vec3 v, float lambert, float r)
+{
+    float A_F = 1.0 / (1.0 + r * (0.5 - (2.0/3.0)/PI));
+    float ldotn = dot(l, n);
+    float vdotn = dot(v, n);
+    float s = dot(l, v) - ldotn * vdotn;
+    float t_F = s > 0.0 ? max(ldotn, vdotn) : 1.0;
+    return lambert * (A_F + r*A_F*(s/t_F));
+}
+
+// "full" Oren-Nayar, as described in the original paper. not the qualitative version, the "full" version.
 vec3 OrenNayarNotrig(vec3 albedo, vec3 l, vec3 n, vec3 v, vec3 h, float lambert, float r)
 {
     // This particular function is CC0 (public domain), and there are no patents on it.
     // It is not based on any other shader. It is based on the original Oren-Nayar paper.
-    if (lambert <= 0.0) return vec3(0.0);
+    //if (lambert <= 0.0) return vec3(0.0);
+    //if (lambert <= 0.0) return vec3(0.0);
+    
+    //float qj = 1.0;
+    //float qq = PBR_OREN_NAYAR_INTERREFLECTION_STRENGTH + (1.0 - lambert)*0.75*(dot(l, v)*0.5+0.5);
+    float qj = 0.0;
+    float qq = PBR_OREN_NAYAR_INTERREFLECTION_STRENGTH;
     
     r *= PI/2.0;
     float r2 = r*r;
@@ -344,7 +372,7 @@ vec3 OrenNayarNotrig(vec3 albedo, vec3 l, vec3 n, vec3 v, vec3 h, float lambert,
     ;
     
     // squaringness of albedo comes from how the output of this function is used (it's factored out)
-    vec3 l2 = PBR_OREN_NAYAR_INTERREFLECTION_STRENGTH * albedo * lambert * (r2/(r2+0.13)) * (1.0 - cos_small_ir_delta * twobeta_over_pi*twobeta_over_pi);
+    vec3 l2 = qq * mix(albedo, vec3(1.0), qj) * lambert * (r2/(r2+0.13)) * (1.0 - cos_small_ir_delta * twobeta_over_pi*twobeta_over_pi);
     
     return min(vec3(1.0), (vec3(l1) + l2) * mix(1.0, PBR_DIFFUSE_OREN_NAYAR_ALBEDO_COMPENSATION, r));
     // four total sqrts
@@ -469,7 +497,7 @@ vec3 perLightPBR(float alpha, vec3 diffuseColor, vec3 diffuseVertexColor, vec3 a
     vec3 fresnel = fresnelSchlick(max(dot(halfDir, viewDir), 0.0), f0, f90);
     float specular = BRDF(normalDir, viewDir, lightDir, halfDir, roughness);
 #else
-    vec3 fresnel = 0.0;
+    vec3 fresnel = vec3(0.0);
     float specular = 0.0;
 #endif
     
@@ -502,12 +530,18 @@ vec3 perLightPBR(float alpha, vec3 diffuseColor, vec3 diffuseVertexColor, vec3 a
     lambert = vec3(Burley(lightDir, normalDir, viewDir, halfDir, baseIncidence, roughness) * (falloff * (1.0/PI)));
     #endif
     #if PBR_DIFFUSE_OREN_NAYAR
-    lambert = OrenNayarNotrig(diffuseColor, lightDir, normalDir, viewDir, halfDir, baseIncidence, roughness*roughness)
-        * (falloff * (1.0/PI));
+    lambert = OrenNayarNotrig(diffuseColor, lightDir, normalDir, viewDir, halfDir,
+        baseIncidence, roughness) * (falloff * (1.0/PI));
     #endif
     #if PBR_DIFFUSE_OREN_NAYAR_APPROX
-    lambert = OrenNayarApprox(diffuseColor, lightDir, normalDir, viewDir, halfDir, baseIncidence, roughness*roughness)
-        * (falloff * (1.0/PI));
+    lambert = OrenNayarApprox(diffuseColor, lightDir, normalDir, viewDir, halfDir,
+        baseIncidence, roughness) * (falloff * (1.0/PI));
+    #endif
+    #if PBR_DIFFUSE_FUJI_OREN_NAYAR
+        lambert = vec3(FujiOrenNayar(lightDir, normalDir, viewDir, baseIncidence, roughness) * (falloff * (1.0/PI)));
+    #endif
+    #if PBR_DIFFUSE_CELSHADE
+        lambert = vec3(min(1.0, baseIncidence*64.0) * (falloff * (1.0/PI)));
     #endif
     
     vec3 diff = diffuseColor * lambert  * (lightColor * shadowing) * (1.0 - fresnel) * (1.0 - metallicity);
