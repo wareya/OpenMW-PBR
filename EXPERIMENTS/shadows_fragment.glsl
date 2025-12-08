@@ -3,7 +3,7 @@
 // set to your shadowmap resolution
 #define SHADOWMAP_RES (2048.0)
 // set to a number between 1 and 16. values from 2 to 5 are normal, values above 5 are silly. 1 means no filtering.
-#define FILTER_SIZE 3
+#define FILTER_SIZE 2
 
 uniform float osg_simulationTime;
 
@@ -103,7 +103,7 @@ float getFilteredShadowing(sampler2DShadow tex, vec4 coord, mat4 matrix)
     return amount;
 }
 
-float unshadowedLightRatio(float distance)
+float unshadowedLightRatioOffset(float distance, vec3 coord_offset)
 {
     float shadowing = 1.0;
 #if SHADOWS
@@ -116,7 +116,10 @@ float unshadowedLightRatio(float distance)
     @foreach shadow_texture_unit_index @shadow_texture_unit_list
         if (!doneShadows)
         {
-            vec3 shadowXYZ = shadowSpaceCoords@shadow_texture_unit_index.xyz / shadowSpaceCoords@shadow_texture_unit_index.w;
+            //vec3 offs = coord_offset * mat3(shadowSpaceMatrix@shadow_texture_unit_index);
+            vec4 offs = shadowSpaceMatrix@shadow_texture_unit_index * vec4(coord_offset, 0.0);
+            vec4 pos = shadowSpaceCoords@shadow_texture_unit_index + offs;
+            vec3 shadowXYZ = (pos.xyz) / pos.w;
 #if @perspectiveShadowMaps
             vec3 shadowRegionXYZ = shadowRegionCoords@shadow_texture_unit_index.xyz / shadowRegionCoords@shadow_texture_unit_index.w;
 #endif
@@ -124,12 +127,17 @@ float unshadowedLightRatio(float distance)
             {
                 float amount = getFilteredShadowing(
                     shadowTexture@shadow_texture_unit_index,
-                    shadowSpaceCoords@shadow_texture_unit_index,
+                    shadowSpaceCoords@shadow_texture_unit_index + offs,
                     shadowSpaceMatrix@shadow_texture_unit_index
                 );
+                //float amount = shadow2DProj(
+                //    shadowTexture@shadow_texture_unit_index,
+                //    shadowSpaceCoords@shadow_texture_unit_index + offs
+                //).r;
+                //
                 shadowing = min(amount, shadowing);
 
-                doneShadows = all(lessThan(shadowXYZ, vec3(0.95, 0.95, 1.0))) && all(greaterThan(shadowXYZ, vec3(0.05, 0.05, 0.0)));
+                doneShadows = all(lessThan(shadowXYZ, vec3(0.95, 0.95, 0.95))) && all(greaterThan(shadowXYZ, vec3(0.05, 0.05, 0.05)));
 #if @perspectiveShadowMaps
                 doneShadows = doneShadows && all(lessThan(shadowRegionXYZ, vec3(1.0, 1.0, 1.0))) && all(greaterThan(shadowRegionXYZ.xy, vec2(-1.0, -1.0)));
 #endif
@@ -141,6 +149,11 @@ float unshadowedLightRatio(float distance)
 #endif
 #endif // SHADOWS
     return shadowing;
+}
+
+float unshadowedLightRatio(float distance)
+{
+    return unshadowedLightRatioOffset(distance, vec3(0.0));
 }
 
 void applyShadowDebugOverlay()
