@@ -3,9 +3,9 @@
 
 /*****
     Note: you must also look at _snippet_parallax.glsl -- this is incomplete without changes to other files
-
+    
     Fully proper usage involves some other changes to how texture sampling is done: you need to form explicit derivatives. Doing this "correctly" is extremely complicated, but the following hack seems to work well:
-
+    
     vec2 dA = dFdx(adjustedUV);
     vec2 dB = dFdy(adjustedUV);
     float l1 = length(dA) + 0.000001;
@@ -17,11 +17,11 @@
     float lb = length(dFdy(origAdjustedUV));
     float lx = min(l1, la);
     float ly = min(l2, lb);
-
+    
     vec4 diffuseTex = texture2DGrad(diffuseMap, adjustedUV, dA*lx, dB*ly);
-
+    
     // ....
-z    
+    
     vec4 normalTex = texture2DGrad(normalMap, adjustedUV, dA*lx, dB*ly);
     // earlier soft version
     //vec4 normalTex = texture2DGrad(normalMap, adjustedUV, dFdx(origAdjustedUV), dFdy(origAdjustedUV));
