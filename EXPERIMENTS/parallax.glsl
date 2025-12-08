@@ -1,7 +1,35 @@
-// note: you must also look at _snippet_parallax.glsl -- this is incomplete without changes to other files
-
 #ifndef LIB_MATERIAL_PARALLAX
 #define LIB_MATERIAL_PARALLAX
+
+/*****
+    Note: you must also look at _snippet_parallax.glsl -- this is incomplete without changes to other files
+
+    Fully proper usage involves some other changes to how texture sampling is done: you need to form explicit derivatives. Doing this "correctly" is extremely complicated, but the following hack seems to work well:
+
+    vec2 dA = dFdx(adjustedUV);
+    vec2 dB = dFdy(adjustedUV);
+    float l1 = length(dA) + 0.000001;
+    float l2 = length(dB) + 0.000001;
+    dA /= l1;
+    dB /= l2;
+    
+    float la = length(dFdx(origAdjustedUV));
+    float lb = length(dFdy(origAdjustedUV));
+    float lx = min(l1, la);
+    float ly = min(l2, lb);
+
+    vec4 diffuseTex = texture2DGrad(diffuseMap, adjustedUV, dA*lx, dB*ly);
+
+    // ....
+z    
+    vec4 normalTex = texture2DGrad(normalMap, adjustedUV, dA*lx, dB*ly);
+    // earlier soft version
+    //vec4 normalTex = texture2DGrad(normalMap, adjustedUV, dFdx(origAdjustedUV), dFdy(origAdjustedUV));
+    // earlier 2x2 pixelated version
+    //vec4 normalTex = texture2D(normalMap, adjustedUV);
+    // non-shown 1x1 pixelated version
+    //vec4 normalTex = texture2DLod(normalMap, adjustedUV, 0.0);
+*****/
 
 #define PARALLAX_SCALE 0.04
 #define PARALLAX_BIAS -(PARALLAX_SCALE*0.5)
@@ -11,7 +39,7 @@
 #define POM_MODE_EXT2 2 // ext1, but force bi/tangent to be exactly perpendicular to normal (not each other)
 #define POM_MODE_EXT3 3 // ext1, but force normal to be perpendicular to triangle (instead of vertex)
 
-#define POM_MODE POM_MODE_EXT2
+#define POM_MODE POM_MODE_BASIC
 
 float det(mat2 matrix)
 {
@@ -43,6 +71,7 @@ mat3 inverse(mat3 matrix)
     return transpose(mat3(minors0, minors1, minors2)) / dot(row0, minors0);
 }
 
+#if POM_MODE != POM_MODE_BASIC
 mat3 calculateTBN(vec3 N, vec3 fragPos, vec2 uv, int mode)
 {
     vec3 dpdx = dFdx(fragPos);
@@ -92,13 +121,14 @@ mat3 calculateTBN(vec3 N, vec3 fragPos, vec2 uv, int mode)
     
     return mat3(T, -B, normalize(N));
 }
+#endif
 
 vec3 parallaxOcclusionScan(sampler2D refTexture, vec2 uv, vec3 eyeTexSpace, mat3 normalToViewMatrix)
 {
 #if POM_MODE != POM_MODE_BASIC
-    mat3 asdf;
-    asdf = inverse(calculateTBN(normalize(gl_NormalMatrix * passNormal), passViewPos, uv, POM_MODE));
-    eyeTexSpace = asdf * normalize(-passViewPos);
+    mat3 nm = transpose(inverse(mat3(gl_ModelViewMatrix)));
+    mat3 realTBN = calculateTBN(normalize(nm * passNormal), passViewPos, uv, POM_MODE);
+    eyeTexSpace = inverse(realTBN) * normalize(-passViewPos);
 #endif
     
     vec3 newEyeTexSpace = eyeTexSpace * vec3(-PARALLAX_SCALE, PARALLAX_SCALE, -1.0);
@@ -111,11 +141,11 @@ vec3 parallaxOcclusionScan(sampler2D refTexture, vec2 uv, vec3 eyeTexSpace, mat3
     float _scale_offs = -PARALLAX_BIAS/PARALLAX_SCALE;
     
     vec3 coord3d_origin = vec3(uv, _scale_offs) - newEyeTexSpace * (1.0 - _scale_offs);
-    vec3 coord3d        = vec3(uv, _scale_offs) + newEyeTexSpace * _scale_offs;
+    vec3 coord3d        = coord3d_origin + newEyeTexSpace;
     
     // multipass approach
     float passes = 3.0;
-    float h_iter = 16.0;
+    float h_iter = 12.0;
     float i = 1.0;
     vec3 expected_3d = coord3d_origin;
     
@@ -128,7 +158,6 @@ vec3 parallaxOcclusionScan(sampler2D refTexture, vec2 uv, vec3 eyeTexSpace, mat3
             float t = i / h_iter;
             expected_3d = mix(coord3d_origin, coord3d, t);
             float probe_height = texture2DLod(refTexture, expected_3d.xy, 0.0).a;
-            //float probe_height = texture2D(refTexture, expected_3d.xy).a;
             if (probe_height > expected_3d.z)
             {
                 if (j + 1 == passes)
@@ -154,9 +183,11 @@ vec3 parallaxOcclusionScan(sampler2D refTexture, vec2 uv, vec3 eyeTexSpace, mat3
 
 vec3 getParallaxShadowOffset(vec2 offset, vec2 uv, mat3 TBN)
 {
+#if POM_MODE != POM_MODE_BASIC
     // for the shadow offset we need to modify the coordinates exactly coplanar,
     // so we need to use a triangle-derived TBN
-    TBN = calculateTBN(normalize(gl_NormalMatrix * passNormal), passViewPos, uv, POM_MODE_EXT3);
+    mat3 nm = transpose(inverse(mat3(gl_ModelViewMatrix)));
+    TBN = calculateTBN(normalize(nm * passNormal), passViewPos, uv, POM_MODE_EXT3);
     
     vec3 uvWorld = TBN * vec3(uv, 0.0);
     float _dx = length(dFdx(passViewPos.xyz)) / (length(dFdx(uvWorld)) + 0.00000001);
@@ -164,6 +195,9 @@ vec3 getParallaxShadowOffset(vec2 offset, vec2 uv, mat3 TBN)
     
     vec3 _offs = vec3(offset.x * _dx, -offset.y * _dy, 0.0);
     return TBN * _offs;
+#else
+    return vec3(0.0);
+#endif
 }
 
 vec2 getParallaxOffset(vec3 eyeDir, float height)
