@@ -735,7 +735,7 @@ vec3 doLightingPBR(float alpha, vec3 diffuseColor, vec3 diffuseVertexColor, vec3
     light += perLightPBR(alpha, diffuseColor, diffuseVertexColor, ambientColor, shadowing, normal, viewDir, normalize(lcalcPosition(0)), 1.0, -1.0, 1.0, 1.0, 1.0, vec3(0.0), sunColor, metallicity, roughness, ao, f0, f90, indoors, ambientBias);
     light += diffuseColor * emissiveColor;
 
-    for (int _i = @startLight; _i < PointLightCount; ++_i)
+    for (int _i = @startLight; _i < @endLight; ++_i)
     {
 #if @lightingMethodUBO
         int i = PointLightIndex[_i];
