@@ -2,7 +2,19 @@
 #define LIB_MATERIAL_PARALLAX
 
 /*****
-    Note: you must also look at _snippet_parallax.glsl -- this is incomplete without changes to other files
+    Example usage per terrain.glsl:
+    
+    // typical parallax displacement mapping
+    vec2 offset = getParallaxOffset(transpose(normalToViewMatrix) * normalize(-passViewPos), texture2D(normalMap, adjustedUV).a);
+    
+    // parallax occlusion mapping
+    vec3 eyeTexSpace = normalize(-passViewPos) * normalToViewMatrix;
+    vec3 off3d = parallaxOcclusionScan(normalMap, adjustedUV, eyeTexSpace, normalToViewMatrix);
+    offset = off3d.xy - adjustedUV;
+
+    vec2 origAdjustedUV = adjustedUV; // we'll need this later
+    // finally apply it
+    adjustedUV += offset;
     
     Fully proper usage involves some other changes to how texture sampling is done: you need to form explicit derivatives. Doing this "correctly" is extremely complicated, but the following hack seems to work well:
     
