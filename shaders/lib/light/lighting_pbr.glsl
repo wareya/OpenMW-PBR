@@ -36,7 +36,7 @@
 #define PBR_RANGEMUL_DEFAULT 2.0
 #define PBR_ACP_DEFAULT 0
 #define PBR_AAO_DEFAULT 1
-#define PBR_SHITTYBRDF 0
+#define PBR_SHITTYBRDF 1
 #define PBR_FALLOFF_NO_COMPENSATION 0
 #define PBR_AUTO_ROUGHNESS_BASIC 0
 #define PBR_ENV_AMBIENT_DEFAULT 1
@@ -55,6 +55,7 @@
 
 #define DEBUG_SHOW_ROUGHNESS 0
 #define DEBUG_SHOW_AO 0
+#define DEBUG_SHOW_METALLICITY 0
 
 // prevent roughness from being less than this amount (reduces speckling on bad textures)
 #define PBR_MAT_ROUGHNESS_FLOOR 0.01
@@ -205,19 +206,17 @@ vec3 fresnelSchlick(float incidence, vec3 f0, vec3 f90)
 {
     return mix(f0, f90, fresnelFactorSchlick(incidence));
 }
+
 float distGGX(float halfIncidence, float r)
 {
     float r2 = r*r;
-    
     float d = halfIncidence*halfIncidence * (r2 - 1.0) + 1.0;
-    
     return r2 / (d * d * PI);
 }
 float distGGXApprox(float halfIncidence, float r)
 {
     float r2 = r*r;
-    return (r*0.5)/(1.0001-halfIncidence+r2*r2);
-    //return r/(1.0-halfIncidence*halfIncidence+r*r);
+    return (r*0.25)/(1.0001-halfIncidence+r2*r);
 }
 float geoSchlickGGX(float incidence, float k)
 {
@@ -259,7 +258,7 @@ float geoSmithGLTF(vec3 normalDir, vec3 viewDir, vec3 lightDir, vec3 halfDir, fl
     float a = halfLight > 0.0 ? geoSmithGLTFDenom(lightInsolation, roughness) : 0.0;
     float b = halfView > 0.0 ? geoSmithGLTFDenom(viewIncidence, roughness) : 0.0;
     
-    return (a * b) / (4.0 * abs(lightInsolation) * abs(viewIncidence));
+    return (a * b) / (4.0 * abs(lightInsolation) * abs(viewIncidence) + 0.00001);
 }
 
 // godot-style
@@ -268,6 +267,37 @@ float geoGGX(float viewIncidence, float lightInsolation, float r)
     float j = viewIncidence * lightInsolation;
     float i = viewIncidence + lightInsolation;
     return 0.5 / (mix(2.0 * j, i, r) + 0.1);
+}
+
+float BRDF(vec3 normalDir, vec3 viewDir, vec3 lightDir, vec3 halfDir, float roughness)
+{
+    float lightInsolation = max(dot(normalDir, lightDir), 0.0);
+    if (lightInsolation <= 0.0)
+        return 0.0;
+    
+    float halfIncidence  = max(dot(normalDir,  halfDir), 0.0);
+    float viewIncidence  = max(dot(normalDir,  viewDir), 0.0);
+    float halfLight      = max(dot(lightDir ,  halfDir), 0.0);
+    float halfView       = max(dot(viewDir  ,  halfDir), 0.0);
+    
+#if PBR_SHITTYBRDF
+    float NDF = distGGXApprox(halfIncidence, roughness);
+    float geo = geoGGX(lightInsolation, viewIncidence, roughness);
+#else
+    float NDF = distGGX(halfIncidence, roughness);
+    float geo = geoSmith(viewIncidence, lightInsolation, roughness);
+    geo = geo / (4.0 * viewIncidence * lightInsolation + 0.0001);
+#endif
+    
+#if PBR_GODOT_BRDF && !PBR_SHITTYBRDF
+    geo = geoGGX(lightInsolation, viewIncidence, roughness);
+#endif
+
+#if PBR_GLTF2_BRDF && !PBR_HIGHPERF
+    geo = geoSmithGLTF(normalDir, viewDir, lightDir, halfDir, roughness);
+#endif
+    
+    return NDF * geo;
 }
 
 float Burley(vec3 lightDir, vec3 normalDir, vec3 viewDir, vec3 halfDir, float lightInsolation, float roughness)
@@ -398,37 +428,6 @@ vec3 OrenNayarApprox(vec3 albedo, vec3 lightDir, vec3 normalDir, vec3 viewDir, v
     ) * PBR_DIFFUSE_OREN_NAYAR_ALBEDO_COMPENSATION, r));
 }
 
-float BRDF(vec3 normalDir, vec3 viewDir, vec3 lightDir, vec3 halfDir, float roughness)
-{
-    float lightInsolation = max(dot(normalDir, lightDir), 0.0);
-    if (lightInsolation <= 0.0)
-        return 0.0;
-    
-    float halfIncidence  = max(dot(normalDir,  halfDir), 0.0);
-    float viewIncidence  = max(dot(normalDir,  viewDir), 0.0);
-    float halfLight      = max(dot(lightDir ,  halfDir), 0.0);
-    float halfView       = max(dot(viewDir  ,  halfDir), 0.0);
-    
-#if PBR_SHITTYBRDF
-    float NDF = distGGXApprox(halfIncidence, roughness);
-    float geo = geoGGX(lightInsolation, viewIncidence, roughness) * 0.5;
-#else
-    float NDF = distGGX(halfIncidence, roughness);
-    float geo = geoSmith(viewIncidence, lightInsolation, roughness);
-    geo = geo / (4.0 * viewIncidence * lightInsolation + 0.0001);
-#endif
-    
-#if PBR_GODOT_BRDF && !PBR_SHITTYBRDF
-    geo = geoGGX(lightInsolation, viewIncidence, roughness);
-#endif
-
-#if PBR_GLTF2_BRDF && !PBR_HIGHPERF
-    geo = geoSmithGLTF(normalDir, viewDir, lightDir, halfDir, roughness);
-#endif
-    
-    return NDF * geo;
-}
-
 vec3 fast_sign(vec3 x)
 {
     return vec3(
@@ -496,7 +495,15 @@ vec3 perLightPBR(float alpha, vec3 diffuseColor, vec3 diffuseVertexColor, vec3 a
     {
         diffuseColor *= diffuseVertexColor;
     }
-    
+
+    float specularMask = 1.0;
+#if PBR_SPECULAR_AO_HACK
+    float ao_closedness = 1.0 - ao*ao;
+    specularMask = clamp(dot(viewDir, -lightDir) * ao_closedness, 0.0, 1.0);
+    specularMask = 1.0 - specularMask;
+#endif
+
+
 #if !PBR_NO_SPECULAR
     vec3 fresnel = fresnelSchlick(max(dot(halfDir, viewDir), 0.0), f0, f90);
     float specular = BRDF(normalDir, viewDir, lightDir, halfDir, roughness);
@@ -525,7 +532,7 @@ vec3 perLightPBR(float alpha, vec3 diffuseColor, vec3 diffuseVertexColor, vec3 a
         // reduce specularity by incidence against plane normal to conserve energy
         adjust = clamp((adjust-0.07)*4.0, 0.0, adjust);
     #endif
-    specular *= adjust;
+    specular *= adjust * specularMask;
 
 #if DO_PBR
     vec3 lambert = vec3(baseIncidence * (falloff * (1.0/PI)));
@@ -577,9 +584,9 @@ vec3 perLightPBR(float alpha, vec3 diffuseColor, vec3 diffuseVertexColor, vec3 a
     {
         spec *= mix(LIGHT_STRENGTH_SUN_SPECULAR, 1.0, metallicity);
     }
-    #if PBR_SPECULAR_AO_HACK
-    spec = mix(spec, spec*ao, 1.0-lightInsolation*lightInsolation);
-    #endif
+    //#if PBR_SPECULAR_AO_HACK
+    //spec = mix(spec, spec*ao, 1.0-lightInsolation*lightInsolation);
+    //#endif
     // now apply lighting
     light += diff;
     light += spec;
@@ -712,6 +719,9 @@ vec3 doLightingPBR(float alpha, vec3 diffuseColor, vec3 diffuseVertexColor, vec3
     #endif
     #if DEBUG_SHOW_AO
         return vec3(ao);
+    #endif
+    #if DEBUG_SHOW_METALLICITY
+        return vec3(metallicity);
     #endif
     // indoors detection hack
     bool indoors = (osg_ViewMatrixInverse * vec4(normalize(lcalcPosition(0)), 0.0)).y > 0.0;
