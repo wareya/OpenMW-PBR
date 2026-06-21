@@ -32,7 +32,6 @@ force shaders = true
 clamp lighting = false
 force per pixel lighting = true
 light bounds multiplier = 5
-lighting method = shaders
 ```
 
 ## License
