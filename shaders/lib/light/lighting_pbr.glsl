@@ -130,13 +130,13 @@
 // note: specularity always uses quadratic falloff
 #define PBR_FALLOFF_REF_DISTANCE 70.0
 // general boost for quadratic falloff
-#define PBR_QUADRATIC_BOOST 1.0
+#define PBR_QUADRATIC_BOOST 1.5
 // force quadratic light falloff (only looks right with gamma values near 2.2)
 #define PBR_FORCE_QUADRATIC_FALLOFF 0
 // prevent quadratic light from being infinite at zero distance
 #define PBR_FORCE_QUADRATIC_FALLOFF_CONSTANT 4.0
-// whether to reinterpret falloff as being gamma-compressed (recommended: on)
-#define PBR_COMPRESSED_FALLOFF 1
+// whether to reinterpret falloff as being gamma-compressed (recommended: OFF!!!! (0). behavior has changed!)
+#define PBR_COMPRESSED_FALLOFF 0
 // match with the light bounding sphere setting under your video options, or lower for better performance
 // WARNING: affects performance a LOT. set to 1.0 for a performance boost
 #define PBR_LIGHT_BOUNDING_SPHERE_MULTIPLIER 1.0
@@ -461,7 +461,7 @@ vec3 to_srgb(vec3 color)
 }
 
 vec3 perLightPBR(float sss, float alpha, vec3 diffuseColor, vec3 diffuseVertexColor, vec3 ambientColor, vec3 shadowing, vec3 normal, vec3 viewDir, vec3 lightDir,
-    float lightDistance, float radius, float falloff, float standard_falloff, float cutoff,
+    float lightDistance, float radius, float falloff, float cutoff,
     vec3 ambientLightColor, vec3 lightColor, float metallicity, float roughness, float ao, vec3 f0, vec3 f90, bool indoors, inout vec3 ambientBias)
 {
     vec3 light = vec3(0.0);
@@ -586,30 +586,10 @@ vec3 perLightPBR(float sss, float alpha, vec3 diffuseColor, vec3 diffuseVertexCo
     // the specular term was already divided by pi in the BRDF function (distGGX specifically)
     // likewise, metallicity was taken into account when calculating the f0 component for specularity
     
-    if (radius >= 0.0)
-    {
-        //spec *= falloff;
-        
-        // always use quadratic falloff for specularity
-        float ref_falloff = clamp(1.0/(PBR_FALLOFF_REF_DISTANCE * PBR_FALLOFF_REF_DISTANCE), 0.0, 1.0);
-        float falloff_mod = standard_falloff*(1.0/ref_falloff);
-
-#if PBR_FALLOFF_NO_COMPENSATION
-        // Chosen to make highperf mode look more like normal mode.
-        falloff_mod = 2000.0;
-#endif
-        
-        falloff_mod *= mix(LIGHT_STRENGTH_POINT_SPECULAR, 1.0, metallicity);
-        
-        // fade out at end of bounding radius
-        falloff_mod *= min(1.0, cutoff*2.0);
-        
-        spec *= falloff_mod/(lightDistance * lightDistance);
-    }
-    else
-    {
+    if (radius >= 0.0) // point light
+        spec *= falloff;
+    else // sun
         spec *= mix(LIGHT_STRENGTH_SUN_SPECULAR, 1.0, metallicity);
-    }
     //#if PBR_SPECULAR_AO_HACK
     //spec = mix(spec, spec*ao, 1.0-lightInsolation*lightInsolation);
     //#endif
@@ -786,9 +766,11 @@ vec3 doLightingPBR(vec2 screenCoord, float alpha,
     //shadowing.r = pow(shadowing.r, 0.7);
     vec3 olight = vec3(0.0);
     
-    olight += perLightPBR(sss, alpha, diffuseColor, diffuseVertexColor, ambientColor, shadowing, normal, viewDir,
-    sunvec,
-    1.0, -1.0, 1.0, 1.0, 1.0, vec3(0.0), sunColor, metallicity, roughness, ao, f0, f90, indoors, ambientBias);
+    olight += perLightPBR(
+        sss, alpha, diffuseColor, diffuseVertexColor, ambientColor, shadowing, normal, viewDir,
+        sunvec,
+        1.0, -1.0, 1.0, 1.0,
+        vec3(0.0), sunColor, metallicity, roughness, ao, f0, f90, indoors, ambientBias);
     olight += diffuseColor * emissiveColor;
 
 #if @lightingMethodClustered
@@ -837,20 +819,32 @@ vec3 doLightingPBR(vec2 screenCoord, float alpha,
         if (cutoff == 0.0)
             continue;
             
-        float legacy_falloff = calcAttenuation(light, lightDistance);
+        //float legacy_falloff = calcAttenuation(light, lightDistance);
+        float legacy_falloff = 1.0 / (
+            light.constant +
+            light.linear * lightDistance +
+            light.quadratic * lightDistance * lightDistance
+        );
         float standard_falloff = calcAttenuation(light, PBR_FALLOFF_REF_DISTANCE);
         
 #if DO_PBR && PBR_FORCE_QUADRATIC_FALLOFF
-        float physical_falloff = 1.0/(PBR_FALLOFF_REF_DISTANCE*PBR_FALLOFF_REF_DISTANCE);
+        //float physical_falloff = 1.0/(PBR_FALLOFF_REF_DISTANCE*PBR_FALLOFF_REF_DISTANCE);
         float constant_part = PBR_FORCE_QUADRATIC_FALLOFF_CONSTANT*PBR_FORCE_QUADRATIC_FALLOFF_CONSTANT;
-        float falloff = (PBR_QUADRATIC_BOOST)/(lightDistance*lightDistance + constant_part)*(standard_falloff/physical_falloff);
+        //float falloff = (PBR_QUADRATIC_BOOST)/(lightDistance*lightDistance + constant_part)*(standard_falloff/physical_falloff);
+        //float falloff = (PBR_QUADRATIC_BOOST)/((lightDistance*lightDistance + constant_part)*light.linear)*70.0;
+        float falloff = (PBR_QUADRATIC_BOOST)/((lightDistance*lightDistance + constant_part)*light.linear*light.linear);
 #else
-#if DO_PBR && PBR_COMPRESSED_FALLOFF
+#if DO_PBR
+    #if PBR_COMPRESSED_FALLOFF
         float falloff = p_to_linear(vec3(legacy_falloff)).r;
+    #else
+        float falloff = legacy_falloff*legacy_falloff;
+    #endif
 #else
         float falloff = legacy_falloff;
 #endif
 #endif
+
         falloff *= cutoff;
         
         vec3 ambient = light.ambient.xyz;
@@ -859,7 +853,7 @@ vec3 doLightingPBR(vec2 screenCoord, float alpha,
         ambient = p_to_linear(ambient);
         vec3 lightColor = p_to_linear(diffuse * LIGHT_STRENGTH_POINT);
         
-        olight += perLightPBR(sss, alpha, diffuseColor, diffuseVertexColor, ambientColor, vec3(1.0), normal, viewDir, lightDir, lightDistance, abs(radius) + 0.0001, falloff, standard_falloff, cutoff, ambient, lightColor, metallicity, roughness, ao, f0, f90, indoors, ambientBias);
+        olight += perLightPBR(sss, alpha, diffuseColor, diffuseVertexColor, ambientColor, vec3(1.0), normal, viewDir, lightDir, lightDistance, abs(radius) + 0.0001, falloff, cutoff, ambient, lightColor, metallicity, roughness, ao, f0, f90, indoors, ambientBias);
     }
     
     olight += perAmbientPBR(diffuseColor, ambientColor, ambientBias, ambientAdjust, ao, metallicity, roughness, normal, viewDir, f0, f90);
