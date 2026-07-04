@@ -1,10 +1,8 @@
-**Are you running 0.51?** Use this version: https://github.com/wareya/OpenMW-PBR/tree/0.51
+**This version is for OpenMW dev builds.** See https://github.com/wareya/OpenMW-PBR/releases for OpenMW stable/release builds.
 
 This repository is not associated with OpenMW
 
-# Wareya's PBR shaders for OpenMW 0.50
-
-Based on OpenMW commit 47d78e004b.
+# Wareya's PBR shaders for OpenMW 0.52
 
 | PBR | Vanilla |
 |-----|---------|

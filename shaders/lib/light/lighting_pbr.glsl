@@ -1,4 +1,6 @@
-#if PER_PIXEL_LIGHTING
+//#if PER_PIXEL_LIGHTING
+
+#include "lib/pbr_extras_config.glsl"
 
 /////////
 /////////
@@ -70,6 +72,11 @@
 // whether to do PBR with the PBR-capable lighting system or not
 // (a value of 0 is only useful for doing debug comparisons with PBR_BYPASS 1)
 #define DO_PBR 1
+
+// output just the albedo texture
+#define NO_LIGHTING 0
+// stuff the albedo texture into the normal map other pixel
+#define NO_LIGHTING_HASH_PBR 0
 
 // use a PBR specular BRDF function inspired by godot's instead of learnopengl's
 // it's meaningfully faster, and is closer to what people will see with PBR in other games
@@ -185,16 +192,6 @@
 #define LIGHT_STRENGTH_AMBIENT 1.0
 #endif
 
-float lcalcCutoff_pbr(int lightIndex, float lightDistance)
-{
-    return 1.0 - quickstep((lightDistance / lcalcRadius(lightIndex)) - 1.0);
-}
-float lcalcIlluminationNoCutoff_pbr(int lightIndex, float dist)
-{
-    float illumination = 1.0 / (lcalcConstantAttenuation(lightIndex) + lcalcLinearAttenuation(lightIndex) * dist + lcalcQuadraticAttenuation(lightIndex) * dist * dist);
-    return illumination;
-}
-
 float fresnelFactorSchlick(float incidence)
 {
     float t = clamp(1.0 - incidence, 0.0, 1.0);
@@ -206,11 +203,12 @@ vec3 fresnelSchlick(float incidence, vec3 f0, vec3 f90)
 {
     return mix(f0, f90, fresnelFactorSchlick(incidence));
 }
-
 float distGGX(float halfIncidence, float r)
 {
     float r2 = r*r;
+    
     float d = halfIncidence*halfIncidence * (r2 - 1.0) + 1.0;
+    
     return r2 / (d * d * PI);
 }
 float distGGXApprox(float halfIncidence, float r)
@@ -437,7 +435,7 @@ vec3 fast_sign(vec3 x)
     );
 }
 
-vec3 to_linear(vec3 color)
+vec3 p_to_linear(vec3 color)
 {
 #if PBR_ASSUME_COLORS_POSITIVE
     if (GAMMA == 2.0)
@@ -462,7 +460,9 @@ vec3 to_srgb(vec3 color)
     return pow(max(vec3(0.0), color), vec3(1.0/GAMMA));
 }
 
-vec3 perLightPBR(float alpha, vec3 diffuseColor, vec3 diffuseVertexColor, vec3 ambientColor, vec3 shadowing, vec3 normal, vec3 viewDir, vec3 lightDir, float lightDistance, float radius, float falloff, float standard_falloff, float cutoff, vec3 ambientLightColor, vec3 lightColor, float metallicity, float roughness, float ao, vec3 f0, vec3 f90, bool indoors, inout vec3 ambientBias)
+vec3 perLightPBR(float sss, float alpha, vec3 diffuseColor, vec3 diffuseVertexColor, vec3 ambientColor, vec3 shadowing, vec3 normal, vec3 viewDir, vec3 lightDir,
+    float lightDistance, float radius, float falloff, float standard_falloff, float cutoff,
+    vec3 ambientLightColor, vec3 lightColor, float metallicity, float roughness, float ao, vec3 f0, vec3 f90, bool indoors, inout vec3 ambientBias)
 {
     vec3 light = vec3(0.0);
 
@@ -491,6 +491,11 @@ vec3 perLightPBR(float alpha, vec3 diffuseColor, vec3 diffuseVertexColor, vec3 a
         lightColor *= diffuseVertexColor;
     }
     else
+    {
+        // if we're an outdoor point light, make it affect AO instead
+        ao *= dot(diffuseVertexColor, vec3(1.0/3.0));
+    }
+    if (false)
 #endif
     {
         diffuseColor *= diffuseVertexColor;
@@ -499,8 +504,11 @@ vec3 perLightPBR(float alpha, vec3 diffuseColor, vec3 diffuseVertexColor, vec3 a
     float specularMask = 1.0;
 #if PBR_SPECULAR_AO_HACK
     float ao_closedness = 1.0 - ao*ao;
-    specularMask = clamp(dot(viewDir, -lightDir) * ao_closedness, 0.0, 1.0);
+    specularMask = ao_closedness;
+    //specularMask *= (dot(viewDir, lightDir) * -0.5 + 0.5);
+    specularMask *= (1.0 - max(0.0, dot(viewDir, normalDir)*dot(lightDir, normalDir)));
     specularMask = 1.0 - specularMask;
+    diffuseColor *= mix(specularMask, 1.0, 0.4);
 #endif
 
 
@@ -523,7 +531,25 @@ vec3 perLightPBR(float alpha, vec3 diffuseColor, vec3 diffuseVertexColor, vec3 a
     }
     baseIncidence *= clamp(-8.0 * (1.0 - 0.3) * eyeCosine + 1.0, 0.3, 1.0);
 #endif
-    
+
+#if PBR_FAKE_SSS
+#if !PBR_FAKE_SSS_FORCE
+    if (sss != 0.0)
+#endif
+    {
+        // darken towards very bright colors to represent "full reflection" having less internal refraction
+        vec3 sssc = min(diffuseColor, 1.5 - diffuseColor) * 1.3333;
+        sssc *= sssc*sssc; // use color-squared as signal (saturated-darkened version), multiply by color again as self-tinted re-emission
+        float sssq = 1.0 - abs(lightInsolation); // 0....1....0 around -1...1
+        sssq = max(0.0, sssq*3.0 - 2.0); // crop it to just the middle part
+        #if PBR_FAKE_SSS_FORCE
+        light += sssc * falloff * cutoff * sssq * shadowing * lightColor * ao * 0.1 * (1.0 - metallicity);
+        #else
+        light += sssc * falloff * cutoff * sssq * shadowing * lightColor * ao * 0.1 * sss;
+        #endif
+    }
+#endif // PBR_FAKE_SSS
+
     if (baseIncidence == 0.0)
         return light;
     
@@ -594,6 +620,7 @@ vec3 perLightPBR(float alpha, vec3 diffuseColor, vec3 diffuseVertexColor, vec3 a
     float lambert = baseIncidence * falloff;
     light += diffuseColor * lambert * (lightColor * shadowing);
 #endif
+
     return light;
 }
 
@@ -692,27 +719,43 @@ vec3 perAmbientPBR(vec3 diffuseColor, vec3 ambientColor, vec3 ambientBias, vec3 
     return light;
 }
 
-vec3 doLightingPBR(float alpha, vec3 diffuseColor, vec3 diffuseVertexColor, vec3 ambientColor, vec3 emissiveColor, vec3 specularTint, vec3 viewPos, vec3 normal, float _shadowing, float metallicity, float roughness, float ao, float f0_scalar)
+vec3 doLightingPBR(vec2 screenCoord, float alpha,
+    vec3 diffuseColor, vec3 diffuseVertexColor, vec3 ambientColor, vec3 emissiveColor, vec3 specularTint,
+    vec3 viewPos, inout vec3 normal, float _shadowing, float metallicity, float roughness, float ao, float sss, float f0_scalar)
 {
+#if NO_LIGHTING
+#if NO_LIGHTING_HASH_PBR
+    if ((int(screenCoord.x + screenCoord.y) & 1) == 0)
+    {
+        normal.r = metallicity * 2.0 - 1.0;
+        normal.g = roughness * 2.0 - 1.0;
+        normal.b = ao * 2.0 - 1.0;
+    }
+#endif
+    return diffuseColor;
+#endif
+    //sss *= 1.0 - metallicity; // trust the asset author, for now.
+    
 #if !DO_PBR
     metallicity = 0.0;
     ao = 1.0;
 #endif
     
-    diffuseColor = to_linear(diffuseColor);
+    diffuseColor = p_to_linear(diffuseColor);
 #if PBR_VERTEX_COLOR_HACK_ALT && DO_PBR
     vec3 oldVC = diffuseVertexColor;
     diffuseVertexColor = mix(diffuseVertexColor, vec3(1.0), 0.33);
     ambientColor *= diffuseVertexColor / (oldVC + vec3(0.01));
 #endif
-    diffuseVertexColor = to_linear(diffuseVertexColor);
-    ambientColor = to_linear(ambientColor);
-    emissiveColor = to_linear(emissiveColor);
+    diffuseVertexColor = p_to_linear(diffuseVertexColor);
+    ambientColor = p_to_linear(ambientColor);
+    emissiveColor = p_to_linear(emissiveColor);
     
     vec3 viewDir = -normalize(viewPos);
     
-    vec3 sunColor = to_linear(lcalcDiffuse(0) * LIGHT_STRENGTH_SUN);
-    vec3 ambientAdjust = to_linear(gl_LightModel.ambient.xyz * LIGHT_STRENGTH_AMBIENT);
+    vec3 sd = sun.diffuse.xyz;
+    vec3 sunColor = p_to_linear(sd * LIGHT_STRENGTH_SUN);
+    vec3 ambientAdjust = p_to_linear(sun.ambient.xyz * LIGHT_STRENGTH_AMBIENT);
     
     #if DEBUG_SHOW_ROUGHNESS
         return vec3(roughness);
@@ -724,7 +767,8 @@ vec3 doLightingPBR(float alpha, vec3 diffuseColor, vec3 diffuseVertexColor, vec3
         return vec3(metallicity);
     #endif
     // indoors detection hack
-    bool indoors = (osg_ViewMatrixInverse * vec4(normalize(lcalcPosition(0)), 0.0)).y > 0.0;
+    vec3 sunvec = normalize(sun.position.xyz);
+    bool indoors = (osg_ViewMatrixInverse * vec4(sunvec, 0.0)).y > 0.0;
     
     vec3 f90 = vec3(1.0) + specularTint;
     vec3 f0 = vec3(f0_scalar) * f90;
@@ -740,68 +784,87 @@ vec3 doLightingPBR(float alpha, vec3 diffuseColor, vec3 diffuseVertexColor, vec3
     
     vec3 shadowing = vec3(_shadowing);
     //shadowing.r = pow(shadowing.r, 0.7);
-    vec3 light = vec3(0.0);
+    vec3 olight = vec3(0.0);
     
-    light += perLightPBR(alpha, diffuseColor, diffuseVertexColor, ambientColor, shadowing, normal, viewDir, normalize(lcalcPosition(0)), 1.0, -1.0, 1.0, 1.0, 1.0, vec3(0.0), sunColor, metallicity, roughness, ao, f0, f90, indoors, ambientBias);
-    light += diffuseColor * emissiveColor;
+    olight += perLightPBR(sss, alpha, diffuseColor, diffuseVertexColor, ambientColor, shadowing, normal, viewDir,
+    sunvec,
+    1.0, -1.0, 1.0, 1.0, 1.0, vec3(0.0), sunColor, metallicity, roughness, ao, f0, f90, indoors, ambientBias);
+    olight += diffuseColor * emissiveColor;
 
-    for (int _i = @startLight; _i < @endLight; ++_i)
-    {
-#if @lightingMethodUBO
-        int i = PointLightIndex[_i];
+#if @lightingMethodClustered
+    LightGrid grid = lightGrid[getClusterTileIndex(screenRes, gridSize, near, screenCoord, viewPos.z)];
+    for (uint i = 0u; i < grid.count; ++i) {
+        PointLight light = pointLight[lightIndexList[grid.offset + i]];
 #else
-        int i = _i;
+    for (int i = 0; i < PointLightCount; ++i) {
+        PointLight light = PointLight(
+            vec4(lcalcPosition(i), 1.0),
+            vec4(lcalcDiffuse(i), 0.0),
+            vec4(lcalcAmbient(i), 0.0),
+            lcalcSpecular(i),
+            lcalcConstantAttenuation(i),
+            lcalcLinearAttenuation(i),
+            lcalcQuadraticAttenuation(i),
+            lcalcRadius(i)
+        );
 #endif
-        float radius = lcalcRadius(i);
-        vec3 lightPos = lcalcPosition(i) - viewPos;
+        
+        vec3 lightPos = light.position.xyz - viewPos;
         float lightDistance = length(lightPos);
+        float radius = light.radius;
         
         vec3 lightDir = normalize(lightPos);
 // groundcover is too expensive to give the boosted cutoff
 #if DO_PBR
 #ifdef GROUNDCOVER
-        float cutoff = lcalcCutoff_pbr(i, lightDistance/PBR_LIGHT_BOUNDING_SPHERE_MULTIPLIER_GROUNDCOVER);
+        //float cutoff = lcalcCutoff_pbr(i, lightDistance/PBR_LIGHT_BOUNDING_SPHERE_MULTIPLIER_GROUNDCOVER);
+        float cutoff = 1.0;
 #else
         float f_fac = clamp(-dot(lightDir, viewDir), 0.0, 1.0);
         f_fac *= f_fac;
         f_fac = mix(1.0, PBR_LIGHT_BOUNDING_SPHERE_MULTIPLIER_TOWARDS_CAMERA, f_fac);
         f_fac = max(f_fac, PBR_LIGHT_BOUNDING_SPHERE_MULTIPLIER);
-        float cutoff = lcalcCutoff_pbr(i, lightDistance/f_fac);
+        //float cutoff = lcalcCutoff_pbr(i, lightDistance/f_fac);
+        float cutoff = 1.0;
 #endif
 #else
-        float cutoff = lcalcCutoff_pbr(i, lightDistance);
+        //float cutoff = lcalcCutoff_pbr(i, lightDistance);
+        float cutoff = 1.0;
 #endif
+        cutoff = 1.0 - fade((lightDistance / radius - 0.75) / 0.25);
+        cutoff *= clusterFade(viewPos, radius);
         
         if (cutoff == 0.0)
             continue;
+            
+        float legacy_falloff = calcAttenuation(light, lightDistance);
+        float standard_falloff = calcAttenuation(light, PBR_FALLOFF_REF_DISTANCE);
         
-        float legacy_falloff = lcalcIlluminationNoCutoff_pbr(i, lightDistance);
-        float standard_falloff = lcalcIlluminationNoCutoff_pbr(i, PBR_FALLOFF_REF_DISTANCE);
 #if DO_PBR && PBR_FORCE_QUADRATIC_FALLOFF
         float physical_falloff = 1.0/(PBR_FALLOFF_REF_DISTANCE*PBR_FALLOFF_REF_DISTANCE);
         float constant_part = PBR_FORCE_QUADRATIC_FALLOFF_CONSTANT*PBR_FORCE_QUADRATIC_FALLOFF_CONSTANT;
         float falloff = (PBR_QUADRATIC_BOOST)/(lightDistance*lightDistance + constant_part)*(standard_falloff/physical_falloff);
 #else
 #if DO_PBR && PBR_COMPRESSED_FALLOFF
-        float falloff = to_linear(vec3(legacy_falloff)).r;
+        float falloff = p_to_linear(vec3(legacy_falloff)).r;
 #else
         float falloff = legacy_falloff;
 #endif
 #endif
         falloff *= cutoff;
         
-        vec3 ambient = lcalcAmbient(i);
-        vec3 diffuse = lcalcDiffuse(i);
+        vec3 ambient = light.ambient.xyz;
+        vec3 diffuse = light.diffuse.xyz;
         
-        ambient = to_linear(ambient);
-        vec3 lightColor = to_linear(diffuse * LIGHT_STRENGTH_POINT);
+        ambient = p_to_linear(ambient);
+        vec3 lightColor = p_to_linear(diffuse * LIGHT_STRENGTH_POINT);
         
-        light += perLightPBR(alpha, diffuseColor, diffuseVertexColor, ambientColor, vec3(1.0), normal, viewDir, lightDir, lightDistance, abs(radius) + 0.0001, falloff, standard_falloff, cutoff, ambient, lightColor, metallicity, roughness, ao, f0, f90, indoors, ambientBias);
+        olight += perLightPBR(sss, alpha, diffuseColor, diffuseVertexColor, ambientColor, vec3(1.0), normal, viewDir, lightDir, lightDistance, abs(radius) + 0.0001, falloff, standard_falloff, cutoff, ambient, lightColor, metallicity, roughness, ao, f0, f90, indoors, ambientBias);
     }
     
-    light += perAmbientPBR(diffuseColor, ambientColor, ambientBias, ambientAdjust, ao, metallicity, roughness, normal, viewDir, f0, f90);
+    olight += perAmbientPBR(diffuseColor, ambientColor, ambientBias, ambientAdjust, ao, metallicity, roughness, normal, viewDir, f0, f90);
     
-    return to_srgb(light);
+    return to_srgb(olight);
 }
 
 void fakePbrEstimate(inout vec3 color, out float metallicity, out float roughness, out float ao, out float f0_scalar)
@@ -826,7 +889,7 @@ void fakePbrEstimate(inout vec3 color, out float metallicity, out float roughnes
     f0_scalar = 0.04;
 }
 
-void specMapToPBR(vec4 specTex, out float metallicity, out float roughness, out float ao, out float f0_scalar)
+void specMapToPBR(vec4 specTex, out float metallicity, out float roughness, out float ao, out float sss, out float f0_scalar)
 {
     metallicity = specTex.r;
     
@@ -847,9 +910,11 @@ void specMapToPBR(vec4 specTex, out float metallicity, out float roughness, out 
         ao = 1.0;
     #endif
     
+    sss = 1.0 - specTex.a;
+    
     f0_scalar = 0.04;
 }
 
-#else // PER_PIXEL_LIGHTING
-#define PBR_BYPASS 1
-#endif // PER_PIXEL_LIGHTING
+//#else // PER_PIXEL_LIGHTING
+//#define PBR_BYPASS 1
+//#endif // PER_PIXEL_LIGHTING

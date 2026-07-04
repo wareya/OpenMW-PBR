@@ -1,9 +1,6 @@
 #version 120
-#pragma import_defines(FORCE_OPAQUE, DISTORTION)
 
-#if @useUBO
-    #extension GL_ARB_uniform_buffer_object : require
-#endif
+#pragma import_defines(FORCE_OPAQUE, DISTORTION)
 
 #if @useGPUShader4
     #extension GL_EXT_gpu_shader4: require
@@ -71,10 +68,10 @@ uniform float distortionStrength;
 #define PER_PIXEL_LIGHTING (@normalMap || @specularMap || @forcePPL)
 
 #if !PER_PIXEL_LIGHTING
+centroid varying vec3 shadedLighting;
+centroid varying vec3 shadedSpecular;
 centroid varying vec3 passLighting;
 centroid varying vec3 passSpecular;
-centroid varying vec3 shadowDiffuseLighting;
-centroid varying vec3 shadowSpecularLighting;
 #else
 uniform float emissiveMult;
 uniform float specStrength;
@@ -89,9 +86,9 @@ varying vec4 passTangent;
 #define ADDITIVE_BLENDING
 #endif
 
+#include "lib/pbr_extras_config.glsl"
+
 #include "lib/core/fragment.h.glsl"
-#include "lib/light/lighting.glsl"
-#include "lib/light/lighting_pbr.glsl"
 #include "lib/material/parallax.glsl"
 #include "lib/material/alpha.glsl"
 #include "lib/util/distortion.glsl"
@@ -126,17 +123,46 @@ void main()
 
 #if @parallax || @diffuseParallax
 #if @parallax
-    float height = texture2D(normalMap, normalMapUV).a;
+#if PBR_POM && !PBR_POM_DISABLE_ON_OBJECTS
+    // POM
+    vec3 offset3d = parallaxOcclusionScan(normalMap, normalMapUV, transpose(normalToViewMatrix) * normalize(-passViewPos).xyz, normalToViewMatrix);
+    offset = offset3d.xy - normalMapUV;
+    
+#if PBR_POM_GRAD
+    vec2 dX;
+    vec2 dY;
+    parallaxDerivativeHelper(normalMapUV + offset, normalMapUV, dX, dY);
+#endif // PBR_POM_GRAD
 #else
-    float height = texture2D(diffuseMap, diffuseMapUV).a;
-#endif
+    float height = texture2D(normalMap, normalMapUV).a;
     offset = getParallaxOffset(transpose(normalToViewMatrix) * normalize(-passViewPos), height);
+#endif // PBR_POM
+#else // parallax
+#if PBR_POM && !PBR_POM_DISABLE_ON_OBJECTS
+    // POM
+    vec3 offset3d = parallaxOcclusionScan(diffuseMap, diffuseMapUV, transpose(normalToViewMatrix) * normalize(-passViewPos).xyz, normalToViewMatrix);
+    offset = offset3d.xy - diffuseMapUV;
+    
+#if PBR_POM_GRAD
+    vec2 dX;
+    vec2 dY;
+    parallaxDerivativeHelper(diffuseMapUV + offset, diffuseMapUV, dX, dY);
+#endif // PBR_POM_GRAD
+#else // PBR_POM
+    //float height = texture2D(diffuseMap, diffuseMapUV).a;
+    //offset = getParallaxOffset(transpose(normalToViewMatrix) * normalize(-passViewPos), height);
+#endif // PBR_POM
+#endif // parallax
 #endif
 
 vec2 screenCoords = gl_FragCoord.xy / screenRes;
 
 #if @diffuseMap
+#if (@parallax || @diffuseParallax) && PBR_POM && PBR_POM_GRAD && !PBR_POM_DISABLE_ON_OBJECTS
+    gl_FragData[0] = texture2DGrad(diffuseMap, diffuseMapUV + offset, dX, dY);
+#else
     gl_FragData[0] = texture2D(diffuseMap, diffuseMapUV + offset);
+#endif
 
 #if defined(DISTORTION) && DISTORTION
     gl_FragData[0].a *= getDiffuseColor().a;
@@ -164,7 +190,11 @@ vec2 screenCoords = gl_FragCoord.xy / screenRes;
     gl_FragData[0].a = alphaTest(gl_FragData[0].a, alphaRef);
 
 #if @normalMap
+#if (@parallax || @diffuseParallax) && PBR_POM && PBR_POM_GRAD && !PBR_POM_DISABLE_ON_OBJECTS
+    vec4 normalTex = texture2DGrad(normalMap, normalMapUV + offset, dX, dY);
+#else
     vec4 normalTex = texture2D(normalMap, normalMapUV + offset);
+#endif
     vec3 normal = normalTex.xyz * 2.0 - 1.0;
 #if @reconstructNormalZ
     normal.z = sqrt(1.0 - dot(normal.xy, normal.xy));
@@ -215,51 +245,44 @@ vec2 screenCoords = gl_FragCoord.xy / screenRes;
 
 #endif
 
+#if (@parallax || @diffuseParallax) && PBR_POM && PBR_POM_SHADOW && !PBR_POM_DISABLE_ON_OBJECTS
+    vec3 shadow_offset = getParallaxShadowOffset(offset, normalMapUV, normalToViewMatrix);
+    float shadowing = unshadowedLightRatioOffset(-passViewPos.z, shadow_offset);
+#else
     float shadowing = unshadowedLightRatio(-passViewPos.z);
-    
-#if PBR_BYPASS
-    
-    vec3 lighting, specular;
+#endif
+
+#if (@parallax || @diffuseParallax) && PBR_SELF_SHADOW
+    shadowing = selfShadowApprox(shadowing, normalMap, normalMapUV, normalToViewMatrix);
+#endif
+
 #if !PER_PIXEL_LIGHTING
-    lighting = passLighting + shadowDiffuseLighting * shadowing;
-    specular = passSpecular + shadowSpecularLighting * shadowing;
+    vec3 lighting, specular;
+    lighting = mix(shadedLighting, passLighting, shadowing);
+    specular = mix(shadedSpecular, passSpecular, shadowing);
+    gl_FragData[0].xyz = gl_FragData[0].xyz * lighting + specular;
 #else
 #if @specularMap
     vec4 specTex = texture2D(specularMap, specularMapUV);
     float shininess = specTex.a * 255.0;
-    vec3 specularColor = specTex.xyz;
+    vec4 specularColor = specTex;
 #else
     float shininess = gl_FrontMaterial.shininess;
-    vec3 specularColor = getSpecularColor().xyz;
+    vec4 specularColor = getSpecularColor();
 #endif
     vec3 diffuseLight, ambientLight, specularLight;
-    doLighting(passViewPos, viewNormal, shininess, shadowing, diffuseLight, ambientLight, specularLight);
-    lighting = diffuseColor.xyz * diffuseLight + getAmbientColor().xyz * ambientLight + getEmissionColor().xyz * emissiveMult;
-    specular = specularColor * specularLight * specStrength;
-#endif
 
-    clampLightingResult(lighting);
-    gl_FragData[0].xyz = gl_FragData[0].xyz * lighting + specular;
-
-#else // PBR_BYPASS
-
-    vec3 color = gl_FragData[0].xyz;
-    float metallicity = 0.0;
-    float roughness = 1.0;
-    float ao = 1.0;
-    float f0 = 0.04;
+    gl_FragData[0].xyz = doLighting(gl_FragCoord.xy, passViewPos, viewNormal, shininess, shadowing,
+        specularColor, getAmbientColor().xyz, getEmissionColor().xyz * emissiveMult, diffuseColor.xyz, gl_FragData[0].xyz,
 #if @specularMap
-    vec4 specTex = texture2D(specularMap, (SPECMAP_USE_DIFFUSE_UV != 0) ? diffuseMapUV + offset : specularMapUV);
-    specMapToPBR(specTex, metallicity, roughness, ao, f0);
+        true,
 #else
-    fakePbrEstimate(color, metallicity, roughness, ao, f0);
+        false,
 #endif
-    //roughness = mix(roughness, 0.0, gl_FrontMaterial.shininess);
+        false
+    );
+#endif
 
-    float a = gl_FragData[0].a;
-    gl_FragData[0].xyz = doLightingPBR(a, gl_FragData[0].xyz, diffuseColor.xyz, getAmbientColor().xyz, getEmissionColor().xyz, getSpecularColor().xyz, passViewPos, viewNormal, shadowing, metallicity, roughness, ao, f0);
-
-#endif // PBR_BYPASS
 
 #if @envMap && !@preLightEnv
     gl_FragData[0].xyz += envEffect;

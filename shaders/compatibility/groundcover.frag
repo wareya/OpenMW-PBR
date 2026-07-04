@@ -1,12 +1,10 @@
 #version 120
 
-#if @useUBO
-    #extension GL_ARB_uniform_buffer_object : require
-#endif
-
 #if @useGPUShader4
     #extension GL_EXT_gpu_shader4: require
 #endif
+
+#include "lib/core/fragment.h.glsl"
 
 #define GROUNDCOVER
 
@@ -22,8 +20,6 @@ varying vec2 normalMapUV;
 
 // Other shaders respect forcePPL, but legacy groundcover mods were designed to work with vertex lighting.
 // They may do not look as intended with per-pixel lighting, so ignore this setting for now.
-//#define PER_PIXEL_LIGHTING @normalMap
-// PBR requires per-pixel lighting to work.
 #define PER_PIXEL_LIGHTING 1
 
 varying float euclideanDepth;
@@ -35,15 +31,13 @@ uniform float alphaRef;
 #if PER_PIXEL_LIGHTING
 varying vec3 passViewPos;
 #else
+centroid varying vec3 shadedLighting;
 centroid varying vec3 passLighting;
-centroid varying vec3 shadowDiffuseLighting;
 #endif
 
 varying vec3 passNormal;
 
 #include "shadows_fragment.glsl"
-#include "lib/light/lighting.glsl"
-#include "lib/light/lighting_pbr.glsl"
 #include "lib/material/alpha.glsl"
 #include "fog.glsl"
 #include "compatibility/normals.glsl"
@@ -74,33 +68,14 @@ void main()
 
     float shadowing = unshadowedLightRatio(linearDepth);
 
-#if PBR_BYPASS || !PER_PIXEL_LIGHTING
-
-    vec3 lighting;
 #if !PER_PIXEL_LIGHTING
-    lighting = passLighting + shadowDiffuseLighting * shadowing;
-#else
-    vec3 diffuseLight, ambientLight, specularLight;
-    doLighting(passViewPos, viewNormal, gl_FrontMaterial.shininess, shadowing, diffuseLight, ambientLight, specularLight);
-    lighting = diffuseLight + ambientLight;
-#endif
-
-    clampLightingResult(lighting);
-
+    vec3 lighting;
+    lighting = mix(shadedLighting, passLighting, shadowing);
     gl_FragData[0].xyz *= lighting;
-    
-#else // PBR_BYPASS
-
-    vec3 color = gl_FragData[0].xyz;
-    float metallicity = 0.0;
-    float roughness = 1.0;
-    float ao = 1.0;
-    float f0 = 0.04;
-    fakePbrEstimate(color, metallicity, roughness, ao, f0);
-
-    float a = 1.0;
-    gl_FragData[0].xyz = doLightingPBR(a, gl_FragData[0].xyz, vec3(1.0), vec3(1.0), vec3(0.0), vec3(0.0), passViewPos, viewNormal, shadowing, metallicity, roughness, ao, f0);
-#endif // PBR_BYPASS
+#else
+    gl_FragData[0].xyz = doLighting(gl_FragCoord.xy, passViewPos, viewNormal, gl_FrontMaterial.shininess, shadowing,
+        vec4(0.0), vec3(1.0), vec3(0.0), vec3(1.0), gl_FragData[0].xyz, false, false);
+#endif
 
     gl_FragData[0] = applyFogAtDist(gl_FragData[0], euclideanDepth, linearDepth, far);
 
