@@ -6,18 +6,19 @@ This repository is not associated with OpenMW
 
 | PBR | Vanilla |
 |-----|---------|
-|![openmw_2025-11-12_12-12-07](https://github.com/user-attachments/assets/2f09b3d4-dbe2-4fab-b04e-11236f5b9f72)|![openmw_2025-11-12_12-12-18](https://github.com/user-attachments/assets/d3649e2d-60f4-48b7-958e-240d9b52c888)|
-|![openmw_2025-11-12_12-20-43](https://github.com/user-attachments/assets/1ddc1ae5-11c5-4252-9190-b5c457355fdd)|![openmw_2025-11-12_12-20-47](https://github.com/user-attachments/assets/f9a867e2-29e8-44fc-b0cd-73571e75878f)|
-|![openmw_2025-11-12_08-11-53](https://github.com/user-attachments/assets/e78d0f72-ce0a-4e25-8e9b-c1a954eb5476)|![openmw_2025-11-12_08-11-57](https://github.com/user-attachments/assets/cf1dc5d1-f6d2-4cba-babd-39485f9c49f7)|
-|![openmw_2025-11-12_08-10-04](https://github.com/user-attachments/assets/cc8ed3f0-0f01-4193-b0fe-8f43b2e8bdc4)|![openmw_2025-11-12_08-10-08](https://github.com/user-attachments/assets/c3c14791-e161-4545-aec2-4c92f27d08b5)|
-|![openmw_2025-11-12_12-38-11](https://github.com/user-attachments/assets/925a87d7-8bf0-4e45-9e08-4d19ede2a487)|![openmw_2025-11-12_12-38-14](https://github.com/user-attachments/assets/16aef777-b1a7-4fc9-b471-1b40161d0f2d)|
-|![openmw_2025-11-12_12-46-03](https://github.com/user-attachments/assets/b5ad99cf-dfd5-46e1-99fd-bd611951acb1)|![openmw_2025-11-12_12-46-07](https://github.com/user-attachments/assets/ea2c8d8b-1cdb-4031-b61d-d3fd7e2cf7c9)|
+|<img width="1920" height="1080" alt="openmw_2026-07-04_17-25-56" src="https://github.com/user-attachments/assets/d0a7d51e-754b-4afd-b26c-040a91a64879" />|<img width="1920" height="1080" alt="openmw_2026-07-04_17-25-53" src="https://github.com/user-attachments/assets/ad80784a-4445-49b1-aa0a-b47cc87089de" />|
+|<img width="1920" height="1080" alt="openmw_2026-07-04_17-28-05" src="https://github.com/user-attachments/assets/480b1982-de49-4fcc-be18-4f01141099cf" />|<img width="1920" height="1080" alt="openmw_2026-07-04_17-28-03" src="https://github.com/user-attachments/assets/353596eb-af99-48a4-8e39-d84ebf99a855" />|
+|<img width="1920" height="1080" alt="openmw_2026-07-04_17-34-12" src="https://github.com/user-attachments/assets/e7a1616b-cc51-488f-a937-57ea363ed879" />|<img width="1920" height="1080" alt="openmw_2026-07-04_17-34-16" src="https://github.com/user-attachments/assets/878ef212-bde5-4a06-a66d-d8dc0a1cbe6f" />|
+|<img width="1920" height="1080" alt="openmw_2026-07-04_17-37-11" src="https://github.com/user-attachments/assets/ade07acf-a18b-40d9-95f0-6b33cd125aa8" />|<img width="1920" height="1080" alt="openmw_2026-07-04_17-37-15" src="https://github.com/user-attachments/assets/ec54beae-9de3-46f4-b7c2-013181517227" />|
+|<img width="1920" height="1080" alt="openmw_2026-07-04_17-41-10" src="https://github.com/user-attachments/assets/d7884585-8973-4e59-93fc-04d49356cf96" />|<img width="1920" height="1080" alt="openmw_2026-07-04_17-41-14" src="https://github.com/user-attachments/assets/95d98b21-2a1d-4a9c-a741-e115dbdc69a9" />|
+|<img width="1920" height="1080" alt="openmw_2026-07-04_17-43-58" src="https://github.com/user-attachments/assets/53383643-9dae-4dc9-a8ed-707783bf5710" />|<img width="1920" height="1080" alt="openmw_2026-07-04_17-44-03" src="https://github.com/user-attachments/assets/29f8a6f3-8fcc-410b-9c14-d60f6344d25f" />|
+|<img width="1920" height="1080" alt="openmw_2026-07-04_17-45-54" src="https://github.com/user-attachments/assets/b840d882-c29f-4eff-a893-c3f38decf25c" />|<img width="1920" height="1080" alt="openmw_2026-07-04_17-45-57" src="https://github.com/user-attachments/assets/65ad2483-e058-40e1-b744-c4a362b38bf2" />|
 
-(screenshot taken with a groundcover mod (Aesthesia) and simple post-processing shaders (like HDR))
+(screenshots taken with other mods also installed)
 
-Very basic minimally invasive PBR shaders for OpenMW. Don't install unless you know what you're doing. Make a backup of the vanilla shaders folder by COPYING it (NOT by renaming it), then copy these shaders over the base ones (DO NOT try to install this over another core shader mod! IT WILL NOT WORK!!!).
+Minimally invasive PBR shaders for OpenMW. Don't install unless you know what you're doing. Make a backup of the vanilla shaders folder by COPYING it (NOT by renaming it), then copy these shaders over the base ones (DO NOT try to install this over another core shader mod! IT WILL NOT WORK!!!).
 
-Implements basic lambert diffuse lighting and schlick-ggx specular lighting. Lighting math is done in (approximately) linear light. Configuration is in lighting_pbr.glsl.
+Implements modern PBR. Highly configurable. Lighting math is done in (approximately) linear light. Configuration is in lighting_pbr.glsl.
 
 These shaders attempt to automatically generate roughness data if there's no PBR specularity material available. To disable this, set `PBR_AUTO_ROUGHNESS_MIN` and `PBR_AUTO_ROUGHNESS_MAX` to the same value (0.75 for example).
 
@@ -29,7 +30,6 @@ Make sure you have these settings set in settings.cfg to avoid any possible issu
 force shaders = true
 clamp lighting = false
 force per pixel lighting = true
-light bounds multiplier = 5
 ```
 
 ## License
