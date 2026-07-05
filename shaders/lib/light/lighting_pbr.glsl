@@ -74,7 +74,7 @@
 #define DO_PBR 1
 
 // output just the albedo texture
-#define NO_LIGHTING 0
+#define NO_LIGHTING 1
 // stuff the albedo texture into the normal map other pixel
 #define NO_LIGHTING_HASH_PBR 1
 
@@ -719,10 +719,10 @@ vec3 doLightingPBR(vec2 screenCoord, float alpha,
     {
         normal.r = metallicity * 2.0 - 1.0;
         normal.g = roughness * 2.0 - 1.0;
-        ao *= 0.4;
-        ao += 0.6;
-        if (_shadowing < 0.5)
-            ao -= 0.6;
+        int aoi = int(round(ao * 15));
+        int shi = int(round(_shadowing * 15));
+        int aoishi = aoi * 16 + shi;
+        ao = float(aoishi) / 255.0;
         normal.b = ao * 2.0 - 1.0;
     }
 #endif
