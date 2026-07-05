@@ -76,7 +76,7 @@
 // output just the albedo texture
 #define NO_LIGHTING 0
 // stuff the albedo texture into the normal map other pixel
-#define NO_LIGHTING_HASH_PBR 0
+#define NO_LIGHTING_HASH_PBR 1
 
 // use a PBR specular BRDF function inspired by godot's instead of learnopengl's
 // it's meaningfully faster, and is closer to what people will see with PBR in other games
@@ -703,16 +703,30 @@ vec3 doLightingPBR(vec2 screenCoord, float alpha,
     vec3 diffuseColor, vec3 diffuseVertexColor, vec3 ambientColor, vec3 emissiveColor, vec3 specularTint,
     vec3 viewPos, inout vec3 normal, float _shadowing, float metallicity, float roughness, float ao, float sss, float f0_scalar)
 {
+    #if DEBUG_SHOW_ROUGHNESS
+        return vec3(roughness);
+    #endif
+    #if DEBUG_SHOW_AO
+        return vec3(ao);
+    #endif
+    #if DEBUG_SHOW_METALLICITY
+        return vec3(metallicity);
+    #endif
+    
 #if NO_LIGHTING
 #if NO_LIGHTING_HASH_PBR
     if ((int(screenCoord.x + screenCoord.y) & 1) == 0)
     {
         normal.r = metallicity * 2.0 - 1.0;
         normal.g = roughness * 2.0 - 1.0;
+        ao *= 0.4;
+        ao += 0.6;
+        if (_shadowing < 0.5)
+            ao -= 0.6;
         normal.b = ao * 2.0 - 1.0;
     }
 #endif
-    return diffuseColor;
+    return diffuseColor * diffuseVertexColor;
 #endif
     //sss *= 1.0 - metallicity; // trust the asset author, for now.
     
@@ -737,15 +751,6 @@ vec3 doLightingPBR(vec2 screenCoord, float alpha,
     vec3 sunColor = p_to_linear(sd * LIGHT_STRENGTH_SUN);
     vec3 ambientAdjust = p_to_linear(sun.ambient.xyz * LIGHT_STRENGTH_AMBIENT);
     
-    #if DEBUG_SHOW_ROUGHNESS
-        return vec3(roughness);
-    #endif
-    #if DEBUG_SHOW_AO
-        return vec3(ao);
-    #endif
-    #if DEBUG_SHOW_METALLICITY
-        return vec3(metallicity);
-    #endif
     // indoors detection hack
     vec3 sunvec = normalize(sun.position.xyz);
     bool indoors = (osg_ViewMatrixInverse * vec4(sunvec, 0.0)).y > 0.0;
