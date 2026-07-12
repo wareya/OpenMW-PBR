@@ -2,8 +2,9 @@
 #define LIB_PBR_CONFIG_EXTRAS
 
 #define PBR_POM 1
+#define PBR_POM_NO_TEXTURELOD 0 // improves driver compatibility, but causes visual glitches. keep to 0 unless absolutely necessary
 #define PBR_POM_DISABLE_ON_OBJECTS 0
-#define PBR_POM_GRAD 1
+#define PBR_POM_GRAD 1 // if you needed to set PBR_POM_NO_TEXTURELOD to 1, you probably need to set this to 0
 #define PBR_POM_SHADOW 1
 #define PBR_POM_SHADDOW_ARTIFACT_BODGE 4 // from 0 to 10
 // ONLY IF you set PBR_POM_SHADDOW_ARTIFACT_BODGE to 0 for some reason:
@@ -19,6 +20,15 @@
 
 // experiment
 #define PBR_FAKE_SSS 1
-#define PBR_FAKE_SSS_FORCE 1
+#define PBR_FAKE_SSS_FORCE 0
+
+// output just the albedo texture
+#define NO_LIGHTING 0
+// stuff the albedo texture into the normal map other pixel
+#define NO_LIGHTING_HASH_PBR 0
+// If you're going to use deferred shading, you probably want this
+//    set to 1 to make some town terrains look less bizarre and plasticky.
+// Otherwise, leave it set to 0.
+#define PBR_EARLY_TERRAIN_VERTCOLOR_AO_HACK 1
 
 #endif // LIB_PBR_CONFIG_EXTRAS

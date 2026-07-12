@@ -91,6 +91,7 @@ void main()
     vec4 normalTex = texture2D(normalMap, adjustedUV);
 #endif
     vec3 normal = normalTex.xyz * 2.0 - 1.0;
+    normal = vec3(0.0, 0.0, 1.0);
 #if @reconstructNormalZ
     normal.z = sqrt(1.0 - dot(normal.xy, normal.xy));
 #endif
@@ -123,6 +124,15 @@ void main()
     float shininess = gl_FrontMaterial.shininess;
     vec4 specularColor = getSpecularColor();
 #endif
+
+#if PBR_EARLY_TERRAIN_VERTCOLOR_AO_HACK
+    diffuseColor.rgb = max(vec3(0.1), diffuseColor.rgb);
+    float _vm = max(diffuseColor.r, max(diffuseColor.g, diffuseColor.b));
+    _vm = min(_vm + 0.4, 1.0);
+    diffuseColor.rgb /= _vm;
+    specularColor.b *= _vm;
+#endif
+
     gl_FragData[0].xyz = doLighting(gl_FragCoord.xy, passViewPos, viewNormal, shininess, shadowing,
         specularColor, getAmbientColor().xyz, getEmissionColor().xyz, diffuseColor.xyz, gl_FragData[0].xyz,
         false,

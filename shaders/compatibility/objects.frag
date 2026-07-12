@@ -272,6 +272,7 @@ vec2 screenCoords = gl_FragCoord.xy / screenRes;
 #endif
     vec3 diffuseLight, ambientLight, specularLight;
 
+    //specularColor.a = 0.0;
     gl_FragData[0].xyz = doLighting(gl_FragCoord.xy, passViewPos, viewNormal, shininess, shadowing,
         specularColor, getAmbientColor().xyz, getEmissionColor().xyz * emissiveMult, diffuseColor.xyz, gl_FragData[0].xyz,
 #if @specularMap

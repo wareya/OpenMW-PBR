@@ -73,11 +73,6 @@
 // (a value of 0 is only useful for doing debug comparisons with PBR_BYPASS 1)
 #define DO_PBR 1
 
-// output just the albedo texture
-#define NO_LIGHTING 0
-// stuff the albedo texture into the normal map other pixel
-#define NO_LIGHTING_HASH_PBR 0
-
 // use a PBR specular BRDF function inspired by godot's instead of learnopengl's
 // it's meaningfully faster, and is closer to what people will see with PBR in other games
 #define PBR_GODOT_BRDF 1
@@ -353,6 +348,7 @@ vec3 OrenNayarNotrig(vec3 albedo, vec3 l, vec3 n, vec3 v, vec3 h, float lambert,
     
     // approximation of the stddev(slopes) to stddev(angles) conversion for values between 0 and 1
     r = r - r*r*0.33;
+    
     float r2 = r*r;
     
     // big: polar
@@ -703,16 +699,45 @@ vec3 doLightingPBR(vec2 screenCoord, float alpha,
     vec3 diffuseColor, vec3 diffuseVertexColor, vec3 ambientColor, vec3 emissiveColor, vec3 specularTint,
     vec3 viewPos, inout vec3 normal, float _shadowing, float metallicity, float roughness, float ao, float sss, float f0_scalar)
 {
+    #if DEBUG_SHOW_ROUGHNESS
+        return vec3(roughness);
+    #endif
+    #if DEBUG_SHOW_AO
+        return vec3(ao);
+    #endif
+    #if DEBUG_SHOW_METALLICITY
+        return vec3(metallicity);
+    #endif
+    
 #if NO_LIGHTING
 #if NO_LIGHTING_HASH_PBR
-    if ((int(screenCoord.x + screenCoord.y) & 1) == 0)
+    //if ((int(screenCoord.x + screenCoord.y) & 1) == 0)
+    if (int((screenCoord.x + screenCoord.y) / 2) == int((screenCoord.x + screenCoord.y + 1) / 2))
     {
+        sss = 1.0;
+        int mi = int(round(metallicity * 15.0));
+        int si = int(round(sss * 15.0));
+        int msi = mi * 16 + 15;
+        metallicity = float(msi) / 255.0;
+        
         normal.r = metallicity * 2.0 - 1.0;
         normal.g = roughness * 2.0 - 1.0;
+        
+        int aoi = int(round(ao * 15.0));
+        int shi = int(round(_shadowing * 15.0));
+        int aoishi = aoi * 16 + shi;
+        ao = float(aoishi) / 255.0;
+        
         normal.b = ao * 2.0 - 1.0;
     }
+    else
+    {
+        float emc = dot(emissiveColor, vec3(1.0/3.0));
+        emc = mix(1.0, 0.5, clamp(emc, 0.0, 1.0));
+        normal *= emc;
+    }
 #endif
-    return diffuseColor;
+    return diffuseColor * diffuseVertexColor;
 #endif
     //sss *= 1.0 - metallicity; // trust the asset author, for now.
     
@@ -737,15 +762,6 @@ vec3 doLightingPBR(vec2 screenCoord, float alpha,
     vec3 sunColor = p_to_linear(sd * LIGHT_STRENGTH_SUN);
     vec3 ambientAdjust = p_to_linear(sun.ambient.xyz * LIGHT_STRENGTH_AMBIENT);
     
-    #if DEBUG_SHOW_ROUGHNESS
-        return vec3(roughness);
-    #endif
-    #if DEBUG_SHOW_AO
-        return vec3(ao);
-    #endif
-    #if DEBUG_SHOW_METALLICITY
-        return vec3(metallicity);
-    #endif
     // indoors detection hack
     vec3 sunvec = normalize(sun.position.xyz);
     bool indoors = (osg_ViewMatrixInverse * vec4(sunvec, 0.0)).y > 0.0;

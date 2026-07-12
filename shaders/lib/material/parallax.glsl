@@ -44,11 +44,10 @@ mat3 inverse(mat3 matrix)
 #define POM_MODE_EXT1 1 // derive bi/tangent from derivative UV info
 #define POM_MODE_EXT2 2 // ext1, but force bi/tangent to be exactly perpendicular to normal (not each other)
 #define POM_MODE_EXT3 3 // ext1, but force normal to be perpendicular to triangle (instead of vertex)
-#define POM_MODE_EXT4 4 // switch between ext1 and basic based on normal deviation
 #define POM_MODE_NONE 10
 
 #ifndef POM_MODE
-#define POM_MODE POM_MODE_EXT1
+#define POM_MODE POM_MODE_EXT3
 #endif
 
 mat3 calculateTBN(vec3 N, vec3 fragPos, vec2 uv, int mode, mat3 defmat)
@@ -56,17 +55,6 @@ mat3 calculateTBN(vec3 N, vec3 fragPos, vec2 uv, int mode, mat3 defmat)
     vec3 dpdx = dFdx(fragPos);
     vec3 dpdy = dFdy(fragPos);
     vec3 n2 = normalize(cross(dpdx, dpdy));
-    float weight = 1.0;
-    if (mode == POM_MODE_EXT4)
-    {
-        float dn = dot(n2, N);
-        if (dn > 0.97) // ~14 deg of leeway
-            return defmat;
-        weight = (dn - 0.94) / 0.03;
-        weight = clamp(weight, 0.0, 1.0);
-        weight = 1.0 - weight;
-        N = n2;
-    }
     if (mode == POM_MODE_EXT3)
     {
         // optional: use triangle normal instead of vertex normal
@@ -113,17 +101,14 @@ mat3 calculateTBN(vec3 N, vec3 fragPos, vec2 uv, int mode, mat3 defmat)
     }
     
     mat3 ret = mat3(T, B, normalize(N));
-    
-    ret[0] = mix(ret[0], defmat[0], 1.0 - weight);
-    ret[1] = mix(ret[1], defmat[1], 1.0 - weight);
-    ret[2] = mix(ret[2], defmat[2], 1.0 - weight);
-    
-    
     return ret;
 }
 
 vec3 parallaxOcclusionScan(sampler2D refTexture, vec2 uv, vec3 eyeTexSpace, mat3 normalToViewMatrix)
 {
+    // likely to be glitchy + probably too far away to care about
+    if (length(dFdx(uv)) > 0.1 || length(dFdy(uv)) > 0.1) return vec3(uv, 0.0);
+    
 #if POM_MODE == POM_MODE_NONE
     return vec3(uv, 0.0);
 #endif
@@ -164,7 +149,11 @@ vec3 parallaxOcclusionScan(sampler2D refTexture, vec2 uv, vec3 eyeTexSpace, mat3
         {
             float t = i / h_iter;
             expected_3d = mix(coord3d_origin, coord3d, t);
+            #if PBR_POM_NO_TEXTURELOD
+            float probe_height = texture2D(refTexture, expected_3d.xy).a;
+            #else
             float probe_height = texture2DLod(refTexture, expected_3d.xy, 0.0).a;
+            #endif
             if (probe_height > expected_3d.z)
             {
                 if (j + 1 == passes)
@@ -269,9 +258,14 @@ float selfShadowApprox(float shadowing, sampler2D tx, vec2 uv, mat3 normalToView
     float _strength = 6.0;
     float _bodge = 0.03;
     float _threshold = 0.0;
+    #if PBR_POM_NO_TEXTURELOD
+    float sun_h_0 = texture2D(tx, uv).a;
+    float sun_h_1 = texture2D(tx, uv + sun_ld_tan.xy * _bodge).a;
+    #else
     float _lod = 2.0;
     float sun_h_0 = texture2DLod(tx, uv, _lod).a;
     float sun_h_1 = texture2DLod(tx, uv + sun_ld_tan.xy * _bodge, _lod).a;
+    #endif
     float _len = length(sun_ld_tan.xy);
     float sun_h_1_expect = sun_h_0 + _len * abs(_bodge*1.1);
     

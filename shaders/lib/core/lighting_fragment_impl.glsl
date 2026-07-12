@@ -35,7 +35,7 @@ vec3 doLighting(vec2 screenCoord, vec3 viewPos, inout vec3 viewNormal, float shi
         
         if (specIsDiffusespec)
         {
-            vec4 specTex = vec4(0.0, specularColor.g, 1.0, 1.0);
+            vec4 specTex = vec4(0.0, specularColor.g, specularColor.b, 1.0);
             specMapToPBR(specTex, metallicity, roughness, ao, sss, f0);
             specularColor = vec4(0.0);
         }
