@@ -1,0 +1,1486 @@
+sampler_2d dfg {
+    source = "shaders/textures/dfg.png";
+    mag_filter = nearest;
+    min_filter = nearest;
+}
+
+uniform_bool uDisable {
+    default = false;
+    description = "...";
+    display_name = "uDisable";
+}
+uniform_bool uContactShadow {
+    default = true;
+    description = "...";
+    display_name = "uContactShadow";
+}
+uniform_bool uBloom {
+    default = true;
+    description = "...";
+    display_name = "uBloom";
+}
+uniform_bool uNoExposureHDR {
+    default = false;
+    description = "...";
+    display_name = "uNoExposureHDR";
+}
+uniform_bool uLazyDiffuse3 {
+    default = true;
+    description = "...";
+    display_name = "uLazyDiffuse3";
+}
+uniform_bool uLazyDiffuse2 {
+    default = false;
+    description = "...";
+    display_name = "uLazyDiffuse2";
+}
+uniform_bool uLazyDiffuse {
+    default = false;
+    description = "...";
+    display_name = "uLazyDiffuse";
+}
+uniform_bool uHammonDiffuse {
+    default = false;
+    description = "...";
+    display_name = "uHammonDiffuse";
+}
+uniform_bool uFujiOrenNayar {
+    default = false;
+    description = "...";
+    display_name = "uFujiOrenNayarDiffuse";
+}
+uniform_bool uSpecularAoHack {
+    default = true;
+    description = "...";
+    display_name = "uSpecularAoHack";
+}
+uniform_bool uSSAO {
+    default = true;
+    description = "...";
+    display_name = "uSSAO";
+}
+uniform_bool uFakeSSS {
+    default = true;
+    description = "...";
+    display_name = "uFakeSSS";
+}
+uniform_bool uFakeSSSForce {
+    default = true;
+    description = "...";
+    display_name = "uFakeSSSForce";
+}
+uniform_bool uBasicAmbientLight {
+    default = false;
+    description = "...";
+    display_name = "uBasicAmbientLight";
+}
+uniform_bool uNoRaycastMetallics {
+    default = false;
+    description = "...";
+    display_name = "uNoRaycastMetallics";
+}
+uniform_bool uNoPBR {
+    default = false;
+    description = "...";
+    display_name = "uNoPBR";
+}
+uniform_bool uAccurateSRGB {
+    default = true;
+    description = "...";
+    display_name = "uAccurateSRGB";
+}
+uniform_float uContactShadowThickness {
+    default = 20.0;
+    min = 0.0;
+    max = 500.0;
+    step = 2.5;
+    description = "....";
+    display_name = "uContactShadowThickness";
+}
+
+render_target RT_Norm {
+    internal_format = rgba16f;
+    source_type = half_float;
+    source_format = rgba;
+    mipmaps = false;
+    min_filter = nearest;
+    mag_filter = nearest;
+}
+
+render_target RT_WNorm {
+    internal_format = rgba16f;
+    source_type = half_float;
+    source_format = rgba;
+    mipmaps = false;
+    min_filter = nearest;
+    mag_filter = nearest;
+}
+
+render_target RT_SSAO {
+    internal_format = rgba16f;
+    source_type = half_float;
+    source_format = rgba;
+    mipmaps = false;
+    min_filter = linear;
+    mag_filter = linear;
+}
+
+render_target RT_PBR {
+    internal_format = rgba16f;
+    source_type = half_float;
+    source_format = rgba;
+    mipmaps = false;
+    min_filter = nearest;
+    mag_filter = nearest;
+}
+
+render_target RT_PBR2 {
+    internal_format = rgba16f;
+    source_type = half_float;
+    source_format = rgba;
+    mipmaps = false;
+    min_filter = nearest;
+    mag_filter = nearest;
+}
+
+render_target RT_WaterOut {
+    internal_format = rgba16f;
+    source_type = half_float;
+    source_format = rgba;
+    mipmaps = true;
+    min_filter = linear_mipmap_linear;
+    mag_filter = linear;
+}
+
+render_target RT_PongOut1 {
+    internal_format = rgba16f;
+    source_type = half_float;
+    source_format = rgba;
+    mipmaps = true;
+    min_filter = linear_mipmap_linear;
+    mag_filter = linear;
+}
+render_target RT_PongOut2 {
+    internal_format = rgba16f;
+    source_type = half_float;
+    source_format = rgba;
+    mipmaps = true;
+    min_filter = linear_mipmap_linear;
+    mag_filter = linear;
+}
+
+render_target RT_Bloom1 {
+    internal_format = rgba16f;
+    source_type = half_float;
+    source_format = rgba;
+    mipmaps = false;
+    width_ratio = 0.125;
+    min_filter = linear;
+    mag_filter = linear;
+}
+
+render_target RT_Bloom2 {
+    internal_format = rgba16f;
+    source_type = half_float;
+    source_format = rgba;
+    mipmaps = false;
+    width_ratio = 0.125;
+    height_ratio = 0.125;
+    min_filter = linear;
+    mag_filter = linear;
+}
+
+render_target RT_OutMicroMemory {
+    internal_format = rgba16f;
+    source_type = half_float;
+    source_format = rgba;
+    height = 2;
+    width = 2;
+    mipmaps = false;
+    min_filter = linear;
+    mag_filter = linear;
+}
+render_target RT_ExpTrack1 {
+    internal_format = rgba16f;
+    source_type = half_float;
+    source_format = rgba;
+    height = 2;
+    width = 2;
+    mipmaps = false;
+    min_filter = linear;
+    mag_filter = linear;
+}
+render_target RT_ExpTrack2 {
+    internal_format = rgba16f;
+    source_type = half_float;
+    source_format = rgba;
+    height = 2;
+    width = 2;
+    mipmaps = false;
+    min_filter = linear;
+    mag_filter = linear;
+}
+
+shared  {
+    float dither(vec2 uvp)
+    {
+        uvp.x += mod(float(omw.frameNumber), 2.0);
+        return fract(uvp.x * 1.555 + uvp.y*1.31);
+    }
+    
+    float EstimateFogCoverageFromUV2(vec2 uv, float dist)
+    {
+#if OMW_RADIAL_FOG
+        vec3 uvPos = omw_GetWorldPosFromUV(uv);
+        float dist1 = length(uvPos - omw.eyePos.xyz);
+        float dist2 = omw_GetLinearDepth(uv);
+        dist *= dist1/dist2;
+#endif
+#if OMW_EXPONENTIAL_FOG
+        float fogValue = 1.0 - exp(-2.0 * max(0.0, dist - omw.fogNear/2.0) / (omw.fogFar - omw.fogNear/2.0));
+#else
+        float fogValue = clamp((dist - omw.fogNear) / (omw.fogFar - omw.fogNear), 0.0, 1.0);
+#endif
+#if 1
+    float fadeValue = clamp((omw.far - dist) / (omw.far * 0.1), 0.0, 1.0);
+    fadeValue *= fadeValue;
+    fogValue = mix(1.0, fogValue, fadeValue);
+#endif
+
+        return fogValue;
+    }
+    
+    float ambientFactor = 0.7;
+    float sunFactor = 2.5;
+    float lightFactor = 2.5;
+    
+    vec3 to_linear(vec3 c) {
+        c = max(vec3(0.0), c);
+        //return c;
+        if (uAccurateSRGB) {
+            bvec3 cutoff = lessThan(c, vec3(0.04045));
+            vec3 higher = pow((c + vec3(0.055))/vec3(1.055), vec3(2.4));
+            vec3 lower = c / vec3(12.92);
+            return mix(higher, lower, vec3(cutoff));
+        }
+        //return c * c; 
+        return pow(c, vec3(2.2)); 
+    }
+
+    vec3 to_srgb(vec3 c) {
+        c = max(vec3(0.0), c);
+        //return c;
+        if (uAccurateSRGB) {
+            bvec3 cutoff = lessThan(c, vec3(0.0031308));
+            vec3 higher = vec3(1.055) * pow(c, vec3(1.0/2.4)) - vec3(0.055);
+            vec3 lower = c * vec3(12.92);
+            return mix(higher, lower, vec3(cutoff));
+        }
+        //return sqrt(c);
+        return pow(c, vec3(1.0/2.2));
+    }
+
+    float d_to_linear(float test)
+    {
+        #if (OMW_REVERSE_Z == 1)
+            test = 1.0 - test;
+            float dist = omw.near * omw.far / (omw.far + test * (omw.near - omw.far));
+        #else
+            test = test * 2.0 - 1.0;
+            float dist = 2.0 * omw.near * omw.far / (omw.far + omw.near - depth * (omw.far - omw.near));
+        #endif
+        return dist;
+    }
+
+    float fresnelFactorSchlick(float incidence)
+    {
+        float t = clamp(1.0 - incidence, 0.0, 1.0);
+        float t2 = t*t;
+        float t5 = t2*t2*t;
+        return t5;
+    }
+    
+    
+    
+    #define PI 3.141592653589793
+    
+    vec3 fresnelSchlick(float incidence, vec3 f0, vec3 f90)
+    {
+        return mix(f0, f90, fresnelFactorSchlick(incidence));
+    }
+    float distGGX(float halfIncidence, float r)
+    {
+        float r2 = r*r;
+        float d = halfIncidence*halfIncidence * (r2 - 1.0) + 1.0;
+        return r2 / (d * d * PI);
+    }
+
+    // godot-style
+    float geoGGX(float viewIncidence, float lightInsolation, float r)
+    {
+        float j = viewIncidence * lightInsolation;
+        float i = viewIncidence + lightInsolation;
+        return 0.5 / (mix(2.0 * j, i, r) + 0.1);
+    }
+
+    float BRDF(vec3 normalDir, vec3 viewDir, vec3 lightDir, vec3 halfDir, float roughness)
+    {
+        float lightInsolation = max(dot(normalDir, lightDir), 0.0);
+        if (lightInsolation <= 0.0)
+            return 0.0;
+        
+        float halfIncidence  = max(dot(normalDir,  halfDir), 0.0);
+        float viewIncidence  = max(dot(normalDir,  viewDir), 0.0);
+        float halfLight      = max(dot(lightDir ,  halfDir), 0.0);
+        float halfView       = max(dot(viewDir  ,  halfDir), 0.0);
+        
+        float NDF = distGGX(halfIncidence, roughness);
+        float geo = geoGGX(lightInsolation, viewIncidence, roughness);
+        
+        return NDF * geo;
+    }
+
+    float p5(float x)
+    {
+        //x = abs(x);
+        return (x*x)*(x*x)*x;
+    }
+    vec3 HammonDiffuse(vec3 diffuseAlbedo, vec3 l, vec3 n, vec3 v, float lambert, float r)
+    {
+        r = clamp(r, 0.0, 1.0);
+        float dotLV = dot(l, v);
+        float dotNL = max(0.0, dot(n, l));
+        float dotNV = max(0.0, dot(n, v));
+        
+        //vec3 h = normalize(l+v);
+        //float dotNH = max(0.0, dot(n, h));
+        //float dotNH = (dotNL + dotNV) / length(l+v);
+        float dotNH = (dotNL + dotNV) * inversesqrt(dot(l+v, l+v));
+        
+        float facing = 0.5 + 0.5*dotLV;
+        float rough = facing * (0.9 - 0.4*facing) * ((0.5 + dotNH)/(dotNH));
+        float smooth_ = 1.05 * (1.0 - p5(1.0 - dotNL)) * (1.0 - p5(1.0 - dotNV));
+        float single = mix(smooth_, rough, r) * (1.0 / PI);
+        float multi = 0.1159 * r;
+        
+        // we use the 1.0-normalized luminance convention, not the pi-normalized convention, so we have to multiply back by pi at the end
+        return (single + multi*diffuseAlbedo) * lambert * PI;
+    }
+
+    // approximation of hammon with fewer operations
+    vec3 LazyDiffuse(vec3 l, vec3 n, vec3 v, float lambert, float r)
+    {
+        r = clamp(r, 0.0, 1.0);
+        float dotLV = dot(l, v);
+        float dotNL = lambert;
+        float dotNV = max(0.0, dot(n, v));
+        
+        float facing = 0.5 + 0.5*dotLV;
+        float dotNHApprox = (dotNL + dotNV) * 0.5;
+        float rough = facing * 0.65 * ((0.5 + dotNHApprox)/(dotNHApprox));
+        float smooth_ = 1.05 * (1.0 - p5(1.0 - (dotNL * dotNV)));
+        float single = mix(smooth_, rough, r);
+        
+        return vec3(single) * lambert;
+    }
+
+    // alternative to hammon that's fitted to different data (rendered shadowcasted diffuse instead of pathtraced diffuse)
+    vec3 LazyDiffuse2(vec3 l, vec3 n, vec3 v, float lambert, float r)
+    {
+        r = clamp(r, 0.0, 1.0);
+        float dotLV = dot(l, v);
+        float dotNL = lambert;
+        float dotNV = max(0.0, dot(n, v));
+        
+        float facing = 0.5 + 0.5*dotLV;
+        float dotNH = (dotNL + dotNV) * inversesqrt(dot(l+v, l+v));
+        float rough = facing * 0.22 * ((2.5 + dotNH)/(dotNH));
+        float smooth_ = 1.05 * (1.0 - p5(1.0 - (dotNL * dotNV)));
+        float single = mix(smooth_, rough, r);
+        
+        return vec3(single) * lambert;
+    }
+    
+    // fudged modified to be closer to being energy-preserving. messed around with https://www.shadertoy.com/view/sf3GD8 a lot.
+    vec3 LazyDiffuse3(vec3 l, vec3 n, vec3 v, float lambert, float r)
+    {
+        r = clamp(r, 0.0, 1.0);
+        float dotLV = dot(l, v);
+        float dotNL = lambert;
+        float dotNV = max(0.0, dot(n, v));
+        
+        float facing = 0.5 + 0.5*dotLV;
+        float dotNHApprox = (dotNL + dotNV) * 0.5;
+        dotNHApprox = (dotNL + dotNV) * inversesqrt(dot(l+v, l+v));
+        float rough = facing * 0.3 * ((2.5 + dotNHApprox)/(dotNHApprox));
+        rough *= mix(0.8, 1.05, 1.0 - p5(1.0 - dotNV)); // tends to be a bit strong around the fresnel edge without this
+        // using the dotNV component here causes energy loss due to lack of internal multiscatter
+        // so, only the dotNL part is used
+        float smooth_ = 1.05 * (1.0 - p5(1.0 - dotNL));
+        //smooth_ = 1.0; // alternative
+        float single = mix(smooth_, rough, r + r*(1.0-r)*0.5);
+        
+        return vec3(single) * lambert * 1.0;
+    }
+    // Fuji's final version of Oren Nayar, as described in the EON paper (arXiv:2410.18026v2)
+    float FujiOrenNayar(vec3 l, vec3 n, vec3 v, float lambert, float r)
+    {
+        r = clamp(r, 0.0, 1.0);
+        float A_F = 1.0 / (1.0 + r * (0.5 - (2.0/3.0)/PI));
+        float ldotn = max(0.0, dot(l, n));
+        float vdotn = max(0.0, dot(v, n));
+        float s = dot(l, v) - ldotn * vdotn;
+        float t_F = s > 0.0 ? max(ldotn, vdotn) : 1.0;
+        float e = (A_F + r*A_F*(s/t_F));
+        if (e != e) return lambert;
+        if (isnan(e)) return lambert;
+        if (isinf(e)) return lambert;
+        return lambert * e;
+    }
+
+    vec3 project(vec3 u, vec3 v)
+    {
+        return dot(u, v) / dot(v, v) * v;
+    }
+    vec3 reject(vec3 u, vec3 v)
+    {
+        return u - project(u, v);
+    }
+
+    #define PBR_DIFFUSE_OREN_NAYAR_ALBEDO_COMPENSATION 1.0
+
+    vec3 OrenNayarApprox(vec3 albedo, vec3 lightDir, vec3 normalDir, vec3 viewDir, vec3 halfDir, float lightInsolation, float r)
+    {
+        if (lightInsolation < 0.0) return vec3(0.0);
+        
+        // approximation of the stddev(slopes) to stddev(angles) conversion for values between 0 and 1
+        r = r - r*r*0.33;
+        float c1 = 0.625;
+        
+        float fake_c2 = dot(reject(lightDir, normalDir), reject(viewDir, normalDir))*0.4;
+        float fake_tan = 1.0/max(dot(halfDir, normalDir), 0.2);
+        return vec3(mix(lightInsolation, lightInsolation * (
+            c1 +
+            fake_c2 * fake_tan +
+            0.0
+        ) * PBR_DIFFUSE_OREN_NAYAR_ALBEDO_COMPENSATION, r));
+    }
+    
+    vec4 doRaymarch(vec3 wpos, vec3 refl, sampler2D reftex, bool forceFuzz, float mip, out vec2 uv)
+    {
+        vec4 reflcolor = vec4(0.0);
+        
+        vec4 startpos_view = omw.viewMatrix * vec4(wpos, 1.0);
+        float surface_distance = -startpos_view.z;
+        
+        vec3 reflected_view = (omw.viewMatrix * vec4(refl, 0.0)).xyz;
+        float refl_distance = reflected_view.z <= 0.0 ? omw.far*2.0 : (surface_distance / reflected_view.z * 0.99);
+        vec4 endpos_view = omw.viewMatrix * vec4(wpos + refl*refl_distance, 1.0);
+        
+        vec4 s1 = omw.projectionMatrix * startpos_view;
+        vec4 s2 = omw.projectionMatrix * endpos_view;
+        
+        s1.xyz /= s1.w;
+        s2.xyz /= s2.w;
+        s1.z = d_to_linear(s1.z);
+        s2.z = d_to_linear(s2.z);
+        s1.z = 1.0/s1.z;
+        s2.z = 1.0/s2.z;
+        
+        // TODO: limit s2 to screen bounds
+        
+        vec4 color = vec4(0.0);
+        float accuracy = 16.0;
+        bool hit = false;
+        vec2 hits = vec2(0.0);
+        bool was_skip = false; // for an edge case in linear contact approximation
+        for (float j = 1.0; j <= accuracy; j++)
+        {
+            float t = j / accuracy;
+            //t = 1.0 - t;
+            vec4 s = mix(s1, s2, t);
+            s.z = 1.0 / s.z;
+            vec2 duv = s.xy * 0.5 + 0.5;
+            duv = (round(duv * omw.resolution) + 0.5) * omw.rcpResolution;
+            float comp = omw_GetLinearDepth(duv);
+            
+            bool skip =
+                comp + surface_distance*2e-3 < s.z - 100.0 // thickness check
+                && comp < surface_distance - 100.0 // likely false occluder check
+            ;
+            if (comp + surface_distance*2e-3 < s.z
+                && !skip
+            )
+            {
+                // linear contact approximation of "true" uv
+                float t0 = (j - 1.0) / accuracy;
+                vec4 s0 = mix(s1, s2, t0);
+                if (sign(s.z) == sign(s0.z) && sign(comp) == sign(s.z) && !was_skip && j != accuracy)
+                {
+                    float szlin = 1.0 / s.z;
+                    float compv = 1.0 / comp;
+                    vec2 duv0 = s0.xy * 0.5 + 0.5;
+                    duv0 = (round(duv0 * omw.resolution) + 0.5) * omw.rcpResolution;
+                    float tval = (compv - szlin) / (s0.z - szlin);
+                    duv = mix(duv, duv0, tval);
+                }
+                
+                reflcolor.rgb = texture2DLod(reftex, duv, mip).rgb;
+                //reflcolor.rgb = omw_Texture2D(reftex, duv).rgb;
+                uv = duv;
+                reflcolor.a = 1.0;
+                hit = true;
+                hits = duv * 2.0 - 1.0;
+                break;
+            }
+            was_skip = skip;
+        }
+        if (!hit)
+        {
+            vec2 duv = s2.xy * 0.5 + 0.5;
+            duv = (round(duv * omw.resolution) + 0.5) * omw.rcpResolution;
+            float comp = omw_GetLinearDepth(duv);
+            if (comp * 1.01 >= omw.far)
+            {
+                reflcolor.rgba = vec4(texture2DLod(reftex, duv, mip).rgb, 1.0);
+                //reflcolor.rgba = vec4(omw_Texture2D(reftex, duv).rgb, 1.0);
+                uv = duv;
+                hits = s2.xy;
+                reflcolor.a = 1.0;
+                hit = true;
+            }
+        }
+        
+        hits.x = clamp(hits.x, -1.0, 1.0);
+        hits.y = clamp(hits.y, -1.0, 1.0);
+        
+        if (reflected_view.z > 0.0 || forceFuzz)
+            reflcolor.a *= min((1.0 - abs(hits.x)) * 6.0, 1.0);
+        reflcolor.a *= min((1.0 - abs(hits.y)) * 6.0, 1.0);
+        
+        // make the fade more visually pleasing
+        reflcolor.a = 1.0 - reflcolor.a;
+        reflcolor.a *= reflcolor.a;
+        reflcolor.a = 1.0 - reflcolor.a;
+        
+        if (!hit)
+            reflcolor.a = 0.0;
+        
+        return reflcolor;
+    }
+    
+    
+    
+    vec3 ambientGuess(float height, vec3 ambientTerm, float roughness)
+    {
+        float t = clamp(height/(roughness + 0.01), -1.0, 1.0);
+        t = mix(t, 0.0, clamp(roughness*2.0-1.0, 0.0, 1.0));
+        float gradient = mix(mix(0.2, 1.8, height*0.5+0.5), 1.0, roughness);
+        return mix(ambientTerm*(0.3 + roughness * 0.2), ambientTerm*1.5, t*0.5+0.5) * gradient;
+    }
+
+    vec3 perAmbient(vec3 wpos, vec3 basecolor, vec3 acolor, vec3 vdir, vec3 n, float ao, float metallicity, float roughness, bool smoothPart, sampler2D reftex)
+    {
+        vdir = -vdir;
+        
+        //vec3 nworld = (osg_ViewMatrixInverse * vec4(normal, 0.0)).xyz;
+        vec3 ambLightRough = ambientGuess(n.z, acolor, 0.7);
+        //vec3 ambLightSemiRough = ambLightRough;
+        //vec3 ambLightSemiRough = texture2DLod(reftex, vec2(0.5, 0.5), 80.0).rgb;
+        
+        vec3 ac = vec3(0.0);
+        ac += texture2D(reftex, vec2(0.5, 0.5)).rgb;
+        ac += 0.1;
+        
+        vec3 ambLightSemiRough = ambientGuess(n.z, min(acolor, ac), 0.7);
+        vec3 ambLight = ambientGuess(n.z, acolor, roughness) * 0.35; // 0.35 is a darkening hack
+        
+        float af = ambientFactor;
+        
+        if (uNoPBR)
+        {
+            if (smoothPart)
+                return vec3(0.0);
+            else
+                return basecolor * ambLightRough * ao * af;
+        }
+        
+        if (smoothPart && !uNoRaycastMetallics && metallicity > 0.0)
+        {
+            vec2 _dummy;
+            vec4 rm = doRaymarch(wpos, reflect(-vdir, n), reftex, true, sqrt(roughness)*6.0, _dummy);
+            ambLight = mix(ambLight, rm.rgb, max(0.0, rm.a));
+            //return ambLight;
+        }
+        
+        float vdot = max(0.0, dot(n, vdir));
+        float inv_roughness = 1.0 - roughness;
+        float inv_roughness_2 = inv_roughness*inv_roughness;
+        
+        float inv_vdot = max(0.0, 1.0 - vdot*2.0);
+        float bad_dfg = inv_roughness_2 * (inv_vdot * inv_vdot);
+        float f90_part = bad_dfg;
+        float f0_part = mix((1.0 - bad_dfg), 0.5, roughness);
+        
+        vec2 auv = vec2(vdot, roughness);
+        auv.y = 1.0 - auv.y;
+        vec2 a = omw_Texture2D(dfg, auv).rg;
+        a = pow(a, vec2(2.2));
+        f0_part = a.r;
+        f90_part = a.g;
+        
+        vec3 light = vec3(0.0);
+        
+        if (smoothPart)
+        {
+            light += ambLight * ao * (basecolor*f0_part + vec3(1.0)*f90_part) * metallicity;
+        }
+        else
+        {
+            if (uBasicAmbientLight)
+                light += basecolor * ambLightRough * ao * af * (1.0 - metallicity);
+            else
+            {
+                light += basecolor * ambLightRough * ao * af * (1.0 - metallicity) * f0_part;
+                light += ambLightSemiRough * ao * af * (1.0 - metallicity) * f90_part / PI;
+            }
+        }
+        
+        return light;
+    }
+}
+
+
+fragment pre_getNormals(target=RT_Norm) {
+    omw_In vec2 omw_TexCoord;
+
+    void main() {
+        if (uDisable) return;
+        vec2 res = omw.resolution;
+        vec2 rres = omw.rcpResolution;
+        ivec2 uvpix = ivec2(omw_TexCoord * res);
+        vec3 c = omw_GetNormalsWorldSpace(omw_TexCoord).rgb;
+        
+        // hole, need to interpolate
+        if (((uvpix.x + uvpix.y) & 1) == 1)
+        {
+            vec4 c1 = vec4(omw_GetNormalsWorldSpace(omw_TexCoord + rres * vec2(1.0, 0.0)).rgb, 0.0);
+            c1.a = 2.0 - length(c1.rgb) * 2.0;
+            vec4 c2 = vec4(omw_GetNormalsWorldSpace(omw_TexCoord + rres * vec2(-1.0, 0.0)).rgb, 0.0);
+            c2.a = 2.0 - length(c2.rgb) * 2.0;
+            vec4 c3 = vec4(omw_GetNormalsWorldSpace(omw_TexCoord + rres * vec2(0.0, -1.0)).rgb, 0.0);
+            c3.a = 2.0 - length(c3.rgb) * 2.0;
+            vec4 c4 = vec4(omw_GetNormalsWorldSpace(omw_TexCoord + rres * vec2(0.0, 1.0)).rgb, 0.0);
+            c4.a = 2.0 - length(c4.rgb) * 2.0;
+            
+            // EDI
+            float da = length(c1 - c3);
+            float db = length(c2 - c4);
+            if (da < db)
+                omw_FragColor = (c1+c3)*0.5;
+            else
+                omw_FragColor = (c2+c4)*0.5;
+            //omw_FragColor.rgb = (c1+c2+c3+c4)*0.25;
+        }
+        // actual raw normal
+        else
+        {
+            omw_FragColor.rgb = c;
+            omw_FragColor.a = 2.0 - length(c) * 2.0;
+        }
+        
+        // underwater
+        vec3 wpos = omw_GetWorldPosFromUV(omw_TexCoord);
+        vec3 eyepos = omw.eyePos.xyz;
+        float watera = eyepos.z - omw.waterHeight;
+        float waterb = wpos.z - omw.waterHeight;
+        if (sign(watera) != sign(waterb) && omw.isWaterEnabled)
+        {
+            float span = 1.0;
+            
+            vec3 a = omw_GetWorldPosFromUV((omw_TexCoord - span*rres*vec2(1.0,0.0)));
+            vec3 b = omw_GetWorldPosFromUV((omw_TexCoord + span*rres*vec2(1.0,0.0)));
+            vec3 c = omw_GetWorldPosFromUV((omw_TexCoord - span*rres*vec2(0.0,1.0)));
+            vec3 d = omw_GetWorldPosFromUV((omw_TexCoord + span*rres*vec2(0.0,1.0)));
+            
+            vec3 dxv = (b-a);
+            vec3 dyv = (d-c);
+            
+            omw_FragColor.rgb = normalize(cross(dxv.xyz, dyv.xyz));
+            omw_FragColor.a = 0.0;
+        }
+    }
+}
+
+fragment pre_getWNormals(target=RT_WNorm) {
+    omw_In vec2 omw_TexCoord;
+
+    void main() {
+        if (uDisable) return;
+        vec2 res = omw.resolution;
+        vec2 rres = omw.rcpResolution;
+        ivec2 uvpix = ivec2(omw_TexCoord * res);
+        vec3 c = omw_GetNormalsWorldSpace(omw_TexCoord).rgb;
+        
+        vec3 wpos = omw_GetWorldPosFromUV(omw_TexCoord);
+        vec3 eyepos = omw.eyePos.xyz;
+        float watera = eyepos.z - omw.waterHeight;
+        float waterb = wpos.z - omw.waterHeight;
+        if (sign(watera) != sign(waterb) && omw.isWaterEnabled)
+        {
+            if (((uvpix.x + uvpix.y) & 1) == 1)
+            {
+                vec3 c1 = omw_GetNormalsWorldSpace(omw_TexCoord + rres * vec2(1.0, 0.0)).rgb;
+                vec3 c2 = omw_GetNormalsWorldSpace(omw_TexCoord + rres * vec2(-1.0, 0.0)).rgb;
+                vec3 c3 = omw_GetNormalsWorldSpace(omw_TexCoord + rres * vec2(0.0, -1.0)).rgb;
+                vec3 c4 = omw_GetNormalsWorldSpace(omw_TexCoord + rres * vec2(0.0, 1.0)).rgb;
+                
+                // EDI
+                float da = length(c1 - c3);
+                float db = length(c2 - c4);
+                if (da < db)
+                    omw_FragColor.rgb = (c1+c3)*0.5;
+                else
+                    omw_FragColor.rgb = (c2+c4)*0.5;
+                //omw_FragColor.rgb = (c1+c2+c3+c4)*0.25;
+            }
+            else
+                omw_FragColor.rgb = c;
+        }
+    }
+}
+
+fragment pre_getPbr(target=RT_PBR2) {
+    omw_In vec2 omw_TexCoord;
+
+    float unpack(float a, out float b)
+    {
+        int aibi = int(round(a * 255.0));
+        int ai = aibi / 16;
+        int bi = aibi % 16;
+        b = float(bi) / 15.0;
+        a = float(ai) / 15.0;
+        return a;
+    }
+
+    void main() {
+        if (uDisable) return;
+        vec2 res = omw.resolution;
+        vec2 rres = omw.rcpResolution;
+        ivec2 uvpix = ivec2(omw_TexCoord * res);
+        vec4 c = vec4(omw_GetNormals(omw_TexCoord) * 0.5 + 0.5, 0.0);
+        c.b = unpack(c.b, c.a);
+        float sss0;
+        c.r = unpack(c.r, sss0);
+        c.a *= 0.999;
+        c.a += round(sss0 * 16.0);
+        
+        if (((uvpix.x + uvpix.y) & 1) == 0)
+        {
+            vec4 c1 = vec4(omw_GetNormals(omw_TexCoord + rres * vec2(1.0, 0.0)) * 0.5 + 0.5, 0.0);
+            vec4 c2 = vec4(omw_GetNormals(omw_TexCoord + rres * vec2(-1.0, 0.0)) * 0.5 + 0.5, 0.0);
+            vec4 c3 = vec4(omw_GetNormals(omw_TexCoord + rres * vec2(0.0, -1.0)) * 0.5 + 0.5, 0.0);
+            vec4 c4 = vec4(omw_GetNormals(omw_TexCoord + rres * vec2(0.0, 1.0)) * 0.5 + 0.5, 0.0);
+            c1.b = unpack(c1.b, c1.a);
+            c2.b = unpack(c2.b, c2.a);
+            c3.b = unpack(c3.b, c3.a);
+            c4.b = unpack(c4.b, c4.a);
+            
+            float sss1, sss2, sss3, sss4;
+            c1.r = unpack(c1.r, sss1);
+            c2.r = unpack(c2.r, sss2);
+            c3.r = unpack(c3.r, sss3);
+            c4.r = unpack(c4.r, sss4);
+            
+            // EDI
+            float da = length(c1 - c3);
+            float db = length(c2 - c4);
+            if (da < db)
+            {
+                omw_FragColor = (c1+c3)*0.5;
+                omw_FragColor.a *= 0.999;
+                omw_FragColor.a += round((sss1+sss3)*0.5 * 16.0);
+            }
+            else
+            {
+                omw_FragColor = (c2+c4)*0.5;
+                omw_FragColor.a *= 0.999;
+                omw_FragColor.a += round((sss2+sss4)*0.5 * 16.0);
+            }
+            //omw_FragColor = (c1+c2+c3+c4)*0.25;
+            //omw_FragColor *= 0.0;
+        }
+        else
+            omw_FragColor = c;
+    }
+}
+
+fragment pre_ssao(rt2=RT_Norm, target=RT_SSAO) {
+    omw_In vec2 omw_TexCoord;
+
+    void main() {
+        if (uDisable) return;
+        vec4 c = vec4(1.0);
+        if (uSSAO)
+        {
+            vec3 n = omw_Texture2D(RT_Norm, omw_TexCoord).xyz;
+            vec3 t = cross(n, vec3(1.0, 0.4, 0.2));
+            vec3 b = normalize(cross(n, t));
+            t = normalize(cross(n, b));
+            mat3 tbn = mat3(n, t, b);
+            
+            vec3 wpos = omw_GetWorldPosFromUV(omw_TexCoord);
+            float d = omw_GetLinearDepth(omw_TexCoord);
+            float samp = 0.0;
+            float sampn = 0.01;
+            float viewmodelDistGuess = 50.0;
+            for (int i = 0; i < 8 && d > viewmodelDistGuess; i++)
+            {
+                float r1 = dither(omw_TexCoord * omw.resolution + float(i)*155.0);
+                float r2 = dither(omw_TexCoord * omw.resolution + float(i)*155.0 + vec2(0.0, 111.0));
+                float r3 = dither(omw_TexCoord * omw.resolution + float(i)*155.0 + vec2(222.45, 0.0));
+                r2 = r2*2.0-1.0;
+                r2 = r2 * r2 * r2;
+                r3 = r3*2.0-1.0;
+                r3 = r3 * r3 * r3;
+                vec3 dp = vec3(r1 + 0.2, r2, r3);
+                //dp -= n;
+                dp = tbn * dp;
+                dp *= 80.0; // sample cast distance
+                vec4 coord = omw.projectionMatrix * (omw.viewMatrix * vec4(wpos + dp, 1.0));
+                coord.xyz /= coord.w;
+                coord.z = d_to_linear(coord.z);
+                vec2 duv = (round((coord.xy * 0.5 + 0.5) * omw.resolution) + 0.5) * omw.rcpResolution;
+                float comp = omw_GetLinearDepth(duv);
+                float dist = coord.z;
+                float weight = 1.0 / (length(dp) + 0.001);
+                if (comp > dist || comp < viewmodelDistGuess || (dist - comp) > 80.0)
+                    samp += weight;
+                sampn += weight;
+            }
+            samp /= sampn;
+            samp = mix(samp, 1.0, clamp(d*0.01-100.0, 0.0, 1.0));
+            samp = clamp(samp * 1.2, 0.0, 1.0);
+            if (d > viewmodelDistGuess)
+                c.b *= samp;
+        }
+        omw_FragColor = c;
+    }
+}
+fragment pre_ssao_apply(rt1=RT_PBR2, rt2=RT_SSAO, target=RT_PBR) {
+    omw_In vec2 omw_TexCoord;
+
+    void main() {
+        if (uDisable) return;
+        vec4 c = omw_Texture2D(RT_PBR2, omw_TexCoord);
+        vec4 ssao = omw_Texture2D(RT_SSAO, omw_TexCoord + omw.rcpResolution * 0.5);
+        c.b *= ssao.b;
+        omw_FragColor = c;
+    }
+}
+
+fragment shade(rt1=RT_Norm, rt2=RT_PBR, rt3=RT_OutMicroMemory, target=RT_PongOut1) {
+    omw_In vec2 omw_TexCoord;
+
+    void perLight(inout vec3 accum, vec3 lcolor, float falloff,
+        vec3 ldir, vec3 vdir, vec3 n,
+        float metallicity, float roughness, float ao, float sss,
+        vec3 basecolor)
+    {
+        falloff = max(falloff, 0.0);
+        if (uNoPBR)
+        {
+            accum += falloff * lcolor * basecolor * max(0.0, dot(ldir, n));
+            return;
+        }
+        vdir = -vdir;
+        
+        vec3 hdir = normalize(vdir + ldir);
+        
+        vec3 f0 = vec3(0.04);
+        vec3 diffuseAlbedo = basecolor;
+        if (metallicity != 0.0)
+        {
+            f0 = mix(f0, basecolor, metallicity);
+            diffuseAlbedo = mix(diffuseAlbedo, vec3(0.0), metallicity);
+        }
+        
+        float dotHV = dot(hdir, vdir);
+        vec3 fresnel = fresnelSchlick(max(0.0, dotHV), f0, vec3(1.0));
+        
+        float insolation = max(0.0, dot(ldir, n));
+        
+        if (uFakeSSS && (sss != 0.0 || uFakeSSSForce))
+        {
+            // darken towards very bright colors to represent "full reflection" having less internal refraction
+            vec3 sssc = min(diffuseAlbedo, 1.5 - diffuseAlbedo) * 1.3333;
+            sssc *= sssc*sssc; // use color-squared as signal (saturated-darkened version), multiply by color again as self-tinted re-emission
+            float sssq = 1.0 - abs(dot(ldir, n)); // 0....1....0 around -1...1
+            sssq = max(0.0, sssq*3.0 - 2.0); // crop it to just the middle part
+            if (uFakeSSSForce)
+                accum += sssc * falloff * sssq * lcolor * ao * 0.1 * (1.0 - metallicity);
+            else
+                accum += sssc * falloff * sssq * lcolor * ao * 0.1 * sss;
+        }
+
+        if (insolation == 0.0)
+            return;
+        
+        vec3 diffuseL;
+        if (uLazyDiffuse3)
+            diffuseL = max(vec3(0.0), LazyDiffuse3(ldir, n, vdir, insolation, roughness));
+        else if (uLazyDiffuse2)
+            diffuseL = max(vec3(0.0), LazyDiffuse2(ldir, n, vdir, insolation, roughness));
+        else if (uLazyDiffuse)
+            diffuseL = max(vec3(0.0), LazyDiffuse(ldir, n, vdir, insolation, roughness));
+        else if (uHammonDiffuse)
+            diffuseL = max(vec3(0.0), HammonDiffuse(diffuseAlbedo, ldir, n, vdir, insolation, roughness));
+        else if (uFujiOrenNayar)
+            diffuseL = vec3(max(0.0, FujiOrenNayar(ldir, n, vdir, insolation, roughness)));
+        else
+            diffuseL = vec3(insolation); // lambert
+        vec3 specularL = vec3(BRDF(n, vdir, ldir, hdir, roughness));
+        
+        if (uSpecularAoHack)
+        {
+            float ao_closedness = 1.0 - ao*ao; // 1 for darker crevices
+            
+            float specularMask = max(0.0, dot(vdir, n)*dot(ldir, n));
+            // 1 if directly facing the facet
+            
+            specularMask = 1.0 - specularMask;
+            specularMask *= ao_closedness;
+            specularMask = 1.0 - specularMask;
+            // now also 1 if the facet is fully open to ambient light.
+            // open facet, facing it: 1      |   closed facet, facing it: 1
+            // open facet, not facing it: 1  |   closed facet, not facing it: 0
+            
+            diffuseAlbedo *= mix(0.4, 1.0, specularMask);
+            specularL *= specularMask;
+        }
+        
+        diffuseL *= 1.0 - fresnel;
+        specularL *= fresnel * insolation;
+        
+        accum += (diffuseL * diffuseAlbedo + specularL) * lcolor * falloff;
+    }
+    void main()
+    {
+        if (uDisable) return;
+        vec3 c = omw_GetLastShader(omw_TexCoord).rgb;
+        
+        float d = omw_GetLinearDepth(omw_TexCoord);
+        if (d >= omw.far)
+            { omw_FragColor.rgb = c; return; }
+        
+        c = to_linear(c);
+        
+        vec4 _n = omw_Texture2D(RT_Norm, omw_TexCoord);
+        vec3 n = _n.xyz;
+        n = normalize(n);
+        float e = clamp(_n.a - 0.05, 0.0, 1.0);
+        vec4 pbr = omw_Texture2D(RT_PBR, omw_TexCoord);
+        
+        vec3 wpos = omw_GetWorldPosFromUV(omw_TexCoord);
+        vec3 eyepos = omw.eyePos.xyz;
+        
+        vec3 vdir = normalize(wpos - eyepos);
+        //float watera = eyepos.z - omw.waterHeight;
+        float waterb = wpos.z - omw.waterHeight;
+        //if (sign(watera) != sign(waterb))
+        //    pbr = vec4(0.0, 0.7, 1.0, 1.0);
+        
+        float metallicity = pbr.r;
+        float roughness = pbr.g;
+        float ao = pbr.b;
+        float shadow = fract(pbr.a);
+        float sss = 1.0 - (floor((pbr.a - shadow)) * (1.0/16.0));
+        
+        vec3 accum = vec3(0.0);
+        
+        accum += e * c;
+        
+        accum += perAmbient(wpos, c, to_linear(omw.ambientColor.rgb), vdir, n, ao, metallicity, roughness, false, RT_OutMicroMemory);
+        
+        float c_shadowing = 1.0;
+        if (uContactShadow)
+        {
+            float udf = clamp(d*0.0001, 0.0, 1.0);
+            udf *= udf;
+            float ud = mix(0.25 * d, 0.4 * d, udf);
+            
+            vec4 s1 = omw.projectionMatrix * (omw.viewMatrix * vec4(wpos - omw.sunVec.xyz * ud, 1.0));
+            s1.xyz /= s1.w;
+            s1.z = 1.0 / d_to_linear(s1.z);
+            
+            vec4 s2 = vec4(omw_TexCoord * 2.0 - 1.0, 0.0, 0.0);
+            s2.z = 1.0 / omw_GetLinearDepth(omw_TexCoord);
+            
+            float c_accuracy = 16.0;
+            float jstart = 1.0 - dither(omw_TexCoord * omw.resolution) * 0.7;
+            
+            float thickness = uContactShadowThickness;
+            thickness = max(thickness, ud * 0.1);
+            
+            for (float j = jstart; j <= c_accuracy; j++)
+            {
+                float t = j / c_accuracy;
+                vec4 s = mix(s2, s1, t);
+                if (s.x < -1.0 || s.x > 1.0 || s.y < -1.0 || s.y > 1.0) continue;
+                s.z = 1.0 / s.z;
+                vec2 duv = (round((s.xy * 0.5 + 0.5) * omw.resolution) + 0.5) * omw.rcpResolution;
+                float comp = omw_GetLinearDepth(duv);
+                float dist = s.z;
+                if (comp + d*4e-3 < dist
+                    && comp + d*4e-3 > dist - thickness
+                )
+                    { c_shadowing = t; break; }
+            }
+            c_shadowing *= c_shadowing;
+        }
+        
+        float sun_rough = roughness;
+        // limit roughness for sunlight in interiors because it's a fake sun so smooth specularity looks really bad
+        if (omw.isInterior)
+        {
+            sun_rough = mix(sun_rough, 1.0, 0.75);
+        }
+        
+        vec3 scolor = to_linear(omw.sunColor.rgb);
+        float svis = omw.sunColor.a;
+        perLight(accum, scolor, svis * shadow * sunFactor * c_shadowing, -omw.sunVec.xyz, vdir, n, metallicity, sun_rough, ao, sss, c);
+        
+        for (int i = 0; i < omw_GetPointLightCount(); i++)
+        {
+            vec3 lpos = omw_GetPointLightWorldPos(i);
+            vec3 color = to_linear(omw_GetPointLightDiffuse(i));
+            vec3 atten = omw_GetPointLightAttenuation(i);
+            
+            float radius = omw_GetPointLightRadius(i);
+            float dist = length(lpos - wpos);
+            if (dist > radius) continue;
+            
+            vec3 dir = (lpos - wpos)/dist;
+            
+            float falloff = 1.0 / (dist * atten.g);
+            falloff *= falloff;
+            falloff = max(falloff, 0.0);
+            
+            //vec4 s1 = omw.projectionMatrix * (omw.viewMatrix * vec4(lpos, 1.0));
+            vec4 s1 = omw.projectionMatrix * (omw.viewMatrix * vec4(wpos + dir * min(dist, 0.2 * d), 1.0));
+            s1.xyz /= s1.w;
+            s1.z = 1.0 / d_to_linear(s1.z);
+            
+            vec4 s2 = vec4(omw_TexCoord * 2.0 - 1.0, 0.0, 0.0);
+            s2.z = 1.0 / omw_GetLinearDepth(omw_TexCoord);
+            
+            float p_shadowing = 1.0;
+            float p_accuracy = 16.0;
+            float jstart = 1.0 - dither(omw_TexCoord * omw.resolution) * 0.7;
+            for (float j = jstart;
+                j <= p_accuracy &&
+                uContactShadow &&
+                s1.z > 0.0;
+                j++)
+            {
+                float t = j / p_accuracy;
+                vec4 s = mix(s2, s1, t);
+                if (s.x < -1.0 || s.x > 1.0 || s.y < -1.0 || s.y > 1.0) continue;
+                s.z = 1.0 / s.z;
+                vec2 duv = (round((s.xy * 0.5 + 0.5) * omw.resolution) + 0.5) * omw.rcpResolution;
+                float comp = omw_GetLinearDepth(duv);
+                float depth = s.z;
+                if (comp + d*4e-3 < depth
+                    && comp + d*4e-3 > depth - uContactShadowThickness
+                    //&& t * dist > uContactShadowThickness * 10.0
+                    //&& dist < uContactShadowThickness * 0.2
+                    && dist * (1.0 - t) > uContactShadowThickness * 1.3
+                    //&& t * 1.0 / abs(s1.z - s2.z) < uContactShadowThickness * 10.0
+                )
+                    { p_shadowing = t; break; }
+            }
+            p_shadowing *= p_shadowing;
+            
+            perLight(accum, color, falloff * p_shadowing * lightFactor, dir, vdir, n, metallicity, roughness, ao, sss, c);
+        }
+        
+        accum = max(vec3(0.0), accum);
+        omw_FragColor.rgb = to_srgb(accum);
+        //omw_FragColor.rgb = vec3(metallicity, roughness, ao);
+        //omw_FragColor.rgb = vec3(metallicity);
+        //omw_FragColor.rgb = vec3(shadow);
+        //omw_FragColor.rgb = vec3(sss);
+        
+        //vec4 rm = doRaymarch(omw_GetWorldPosFromUV(omw_TexCoord), reflect(vdir, n), omw_SamplerLastShader, false, 0.0);
+        //omw_FragColor = rm;
+        //omw_FragColor.rgb *= rm.a;
+        
+        //omw_FragColor.rgb = n * 0.5 + 0.5;
+    }
+}
+fragment water(rt1=RT_WNorm, rt2=RT_PongOut1, target=RT_WaterOut) {
+    omw_In vec2 omw_TexCoord;
+
+    void main() {
+        if (uDisable) return;
+        // super basic screen-space reflection water implementation. still buggy.
+        vec3 c = omw_Texture2D(RT_PongOut1, omw_TexCoord).rgb;
+        float d = omw_GetLinearDepth(omw_TexCoord);
+        vec3 eyepos = omw.eyePos.xyz;
+        float watera = eyepos.z - omw.waterHeight;
+        bool view_underwater = watera < 0.0 && omw.isWaterEnabled;
+        vec3 wpos = omw_GetWorldPosFromUV(omw_TexCoord);
+        float waterb = wpos.z - omw.waterHeight;
+        if (d == omw.far && !view_underwater && sign(watera) == sign(waterb))
+        {
+            omw_FragColor.rgb = c;
+            return;
+        }
+        if (omw.isWaterEnabled)
+        {
+            c = to_linear(c);
+            vec3 n = omw_Texture2D(RT_WNorm, omw_TexCoord).xyz;
+            //n = n * 2.0 - 1.0;
+            //n = n * 0.5 + 0.5;
+            n = mix(n, vec3(0.0, 0.0, 1.0), 0.5);
+            //n = mix(n, vec3(0.0, 0.0, 1.0), 1.0);
+            n = normalize(n);
+            
+            if (waterb < 0.0 && d != omw.far)
+                c *= 0.5; // wet things are usually darker :^)
+            if (sign(watera) != sign(waterb))
+                c += vec3(0.3,0.4,0.5)*0.1 * to_linear(omw.ambientColor.rgb);
+            
+            float water_fraction = 1.0 - (wpos.z - omw.waterHeight) / (wpos.z - eyepos.z);
+            float surface_distance = d * water_fraction;
+            wpos = mix(eyepos, wpos, water_fraction);
+            
+            if (sign(watera) != sign(waterb))
+            {
+                vec3 eyevec = normalize(wpos - eyepos);
+                vec3 refl = reflect(eyevec, n);
+                
+                // fallback color
+                float upz = 1.0 - abs(refl.z);
+                upz *= upz;
+                vec3 skyboxEstimate = mix(omw.skyColor.rgb, omw.fogColor.rgb, upz);
+                vec3 hdir = normalize(eyevec - refl);
+                float fresnel = 1.0 - fresnelFactorSchlick(abs(dot(hdir, eyevec)));
+                if (view_underwater)
+                {
+                    fresnel *= fresnel;
+                    fresnel = clamp(fresnel * 1.5 - 0.5, 0.0, 1.0);
+                    skyboxEstimate = mix(omw.ambientColor.rgb * 0.2, omw.fogColor.rgb * 0.2, upz);
+                }
+                
+                vec2 uv;
+                vec4 reflcolor = doRaymarch(wpos, refl, RT_PongOut1, false, 0.0, uv);
+                
+                // reflected fog color hack
+                if (reflcolor.a > 0.0)
+                {
+                    float fv1 = 1.0 - EstimateFogCoverageFromUV2(omw_TexCoord, surface_distance);
+                    float d2f = omw_GetLinearDepth(uv);
+                    if (d2f != omw.far)
+                    {
+                        float fv2 = 1.0 - EstimateFogCoverageFromUV2(uv, d2f);
+                        float fv3 = fv2 / (fv1 + 0.01);
+                        fv3 = clamp(1.0 - fv3, 0.0, 1.0);
+                        reflcolor.rgb = mix(reflcolor.rgb, omw.fogColor.rgb, fv3);
+                    }
+                }
+                
+                reflcolor.rgb = mix(to_linear(skyboxEstimate), to_linear(reflcolor.rgb), max(0.0, reflcolor.a));
+                
+                omw_FragColor.rgb = mix(c, reflcolor.rgb, 1.0 - fresnel);
+                omw_FragColor.rgb = to_srgb(omw_FragColor.rgb);
+                //omw_FragColor.rgb = vec3(float(int(hit)));
+                return;
+                //p_shadowing *= p_shadowing;
+            }
+            c = to_srgb(c);
+        }
+        omw_FragColor.rgb = c;
+        return;
+    }
+}
+
+fragment afterWater(rt1=RT_WaterOut, target=RT_OutMicroMemory) {
+    omw_In vec2 omw_TexCoord;
+    void main() {
+        if (uDisable) return;
+        vec3 c = texture2D(RT_WaterOut, omw_TexCoord).rgb;
+        omw_FragColor.rgb = c - 0.1; // 0.1 offset to reduce flickering when setting/unsetting shaders
+        return;
+    }
+}
+fragment metal(rt1=RT_Norm, rt2=RT_PBR, rt3=RT_WaterOut, target=RT_PongOut1) {
+    omw_In vec2 omw_TexCoord;
+
+    void main() {
+        if (uDisable) return;
+        vec3 c = omw_Texture2D(RT_WaterOut, omw_TexCoord).rgb;
+        
+        vec3 wpos = omw_GetWorldPosFromUV(omw_TexCoord);
+        vec3 eyepos = omw.eyePos.xyz;
+        vec3 eyevec = normalize(wpos - eyepos);
+        vec3 n = omw_Texture2D(RT_Norm, omw_TexCoord).xyz;
+        n = normalize(n);
+        vec3 refl = reflect(eyevec, n);
+        vec2 _uv = omw_TexCoord;
+        vec4 reflcolor = doRaymarch(wpos, refl, RT_WaterOut, false, 0.0, _uv);
+        
+        float d = omw_GetLinearDepth(omw_TexCoord);
+        vec3 vdir = normalize(wpos - eyepos);
+        if (omw.isWaterEnabled)
+        {
+            float watera = eyepos.z - omw.waterHeight;
+            float waterb = wpos.z - omw.waterHeight;
+            
+            if (sign(watera) != sign(waterb))
+            {
+                omw_FragColor.rgb = c;
+                return;
+            }
+        }
+        
+        if (d == omw.far)
+        {
+            omw_FragColor.rgb = c;
+            return;
+        }
+        
+        c = to_linear(c);
+        
+        vec3 accum = vec3(c);
+        
+        vec3 base_color = to_linear(omw_GetLastShader(omw_TexCoord).rgb);
+        
+        vec4 pbr = omw_Texture2D(RT_PBR, omw_TexCoord);
+        
+        float metallicity = pbr.r;
+        float roughness = pbr.g;
+        float ao = pbr.b;
+        float shadow = pbr.a;
+        
+        accum += perAmbient(wpos, base_color, to_linear(omw.ambientColor.rgb), vdir, n, ao, metallicity, roughness, true, RT_WaterOut);
+        
+        accum = max(vec3(0.0), accum);
+        omw_FragColor.rgb = to_srgb(accum);
+    }
+}
+
+fragment applyFog(rt1=RT_PongOut1, target=RT_PongOut2) {
+    omw_In vec2 omw_TexCoord;
+
+    void main() {
+        if (uDisable) return;
+        vec3 c = omw_Texture2D(RT_PongOut1, omw_TexCoord).rgb;
+        omw_FragColor.rgb = c;
+        
+        vec3 wpos = omw_GetWorldPosFromUV(omw_TexCoord);
+        vec3 eyepos = omw.eyePos.xyz;
+        
+        float upz = 1.0 - abs(normalize(eyepos - wpos).z);
+        upz *= upz;
+        upz = mix(upz, 1.0, 0.5);
+        vec3 skyboxEstimate = mix(omw.skyColor.rgb, omw.fogColor.rgb, upz);
+        
+        float d = omw_GetLinearDepth(omw_TexCoord);
+        if (omw.isWaterEnabled)
+        {
+            float watera = eyepos.z - omw.waterHeight;
+            float waterb = wpos.z - omw.waterHeight;
+            
+            if (sign(watera) != sign(waterb))
+            {
+                float water_fraction = 1.0 - (wpos.z - omw.waterHeight) / (wpos.z - eyepos.z);
+                float surface_distance = d * water_fraction;
+                
+                float fogCoverage = EstimateFogCoverageFromUV2(omw_TexCoord, surface_distance);
+                omw_FragColor.rgb = mix(omw_FragColor.rgb, skyboxEstimate, fogCoverage);
+                return;
+            }
+        }
+        
+        if (d == omw.far)
+        {
+            #if (OMW_REVERSE_Z == 1)
+            float rawskydepth = 0.0;
+            #else
+            float rawskydepth = 1.0;
+            #endif
+            if (omw_Texture2D(omw_SamplerDepth, omw_TexCoord).r == rawskydepth)
+                return;
+        }
+        
+        float fogCoverage = EstimateFogCoverageFromUV2(omw_TexCoord, d);
+        omw_FragColor.rgb = mix(omw_FragColor.rgb, skyboxEstimate, fogCoverage);
+    }
+}
+fragment bloom1(rt1=RT_PongOut2, target=RT_Bloom1) {
+    omw_In vec2 omw_TexCoord;
+
+    void main() {
+        if (uDisable) return;
+        if (!uBloom) return;
+        vec3 c = vec3(0.0);
+        vec2 px = omw.rcpResolution;
+        float norm = 0.0;
+        for (float n = -3.5; n <= 3.5; n += 1.0)
+        {
+            //float w = exp(-(n*n)*0.2); // gaussian, but...
+            float w = 1.0 - abs(n * 0.25); // a triangle blur is close enough
+            norm += w;
+            c += w * to_linear(omw_Texture2D(RT_PongOut2, omw_TexCoord + vec2(n, 0.0) * px * 8.0 * 1.5).rgb);
+        }
+        c /= norm;
+        omw_FragColor.rgb = to_srgb(c);
+    }
+}
+fragment bloom2(rt1=RT_Bloom1, target=RT_Bloom2) {
+    omw_In vec2 omw_TexCoord;
+
+    void main() {
+        if (uDisable) return;
+        if (!uBloom) return;
+        vec3 c = vec3(0.0);
+        vec2 px = omw.rcpResolution;
+        float norm = 0.0;
+        for (float n = -3.5; n <= 3.5; n += 1.0)
+        {
+            //float w = exp(-(n*n)*0.2); // gaussian, but...
+            float w = 1.0 - abs(n * 0.25); // a triangle blur is close enough
+            norm += w;
+            c += w * to_linear(omw_Texture2D(RT_Bloom1, omw_TexCoord + vec2(0.0, n) * px * 8.0 * 1.5).rgb);
+        }
+        c /= norm;
+        omw_FragColor.rgb = to_srgb(c);
+    }
+}
+
+fragment bloomdone(rt1=RT_PongOut2, rt2=RT_Bloom1, rt3=RT_Bloom2, target=RT_PongOut1) {
+    omw_In vec2 omw_TexCoord;
+
+    void main() {
+        if (uDisable) return;
+        vec3 c = to_linear(omw_Texture2D(RT_PongOut2, omw_TexCoord).rgb);
+        if (uBloom)
+        {
+            vec3 c2 = to_linear(omw_Texture2D(RT_Bloom2, omw_TexCoord).rgb);
+            c = c * 0.95 + c2 * 0.07;
+        }
+        omw_FragColor.rgb = to_srgb(c);
+    }
+}
+
+fragment exposureTrack(rt1=RT_OutMicroMemory, rt2=RT_ExpTrack1, target=RT_ExpTrack2) {
+    omw_In vec2 omw_TexCoord;
+    void main() {
+        vec4 c1 = omw_Texture2D(RT_OutMicroMemory, omw_TexCoord) + 0.1;
+        vec4 c2 = omw_Texture2D(RT_ExpTrack1, omw_TexCoord) + 0.2;
+        // unfortunately, this lerp is unstable at extremely low delta times, so we have to enforce a minimum delta time
+        float f = 1.0 - exp(-2.0 * max(0.002, omw.deltaSimulationTime));
+        omw_FragColor = mix(c2, c1, f);
+    }
+}
+fragment exposureTrackBounce(rt1=RT_ExpTrack2, target=RT_ExpTrack1) {
+    omw_In vec2 omw_TexCoord;
+    void main() {
+        vec4 c = omw_Texture2D(RT_ExpTrack2, omw_TexCoord);
+        omw_FragColor = c - 0.2;
+    }
+}
+fragment exposure(rt1=RT_PongOut1, rt2=RT_ExpTrack1) {
+    omw_In vec2 omw_TexCoord;
+    void main() {
+        if (uDisable)
+        {
+            vec4 c = omw_GetLastShader(omw_TexCoord);
+            omw_FragColor = c;
+            return;
+        }
+        vec3 c = to_linear(omw_Texture2D(RT_PongOut1, omw_TexCoord).rgb);
+        if (uNoExposureHDR)
+        {
+            omw_FragColor.rgb = to_srgb(c);
+            return;
+        }
+        
+        //float uExposure = 3.5;
+        //float uExposure = 1.0 / (omw_Texture2D(RT_ExpTrack1, vec2(0.5)).r);
+        float uExposure = 1.0 / (omw_Texture2D(RT_ExpTrack1, vec2(0.5)).r + 0.2 + 0.01);
+        float uThreshold = 1.0;
+        //float uRate = 0.35;
+        float uRate = 0.15;
+        bool uTonemap = true;
+        bool uMakeup = true;
+        bool uTonemapLowContrast = true;
+        
+        // Applying the manual exposure multiplier
+        // Using uExposure directly as the linear multiplier
+        vec3 g = c * uExposure;
+
+        // Desaturation
+        vec3 gray_val = vec3(dot(g, vec3(0.3333)));
+        vec3 gt = g - vec3(uThreshold);
+        float overshoot = max(0.0, max(gt.r, max(gt.g, gt.b))) * uRate * 0.333;
+        overshoot = clamp(overshoot, 0.0, 1.0);
+        g = mix(g, gray_val, overshoot);
+
+        // Tonemapping Logic
+        if (uTonemap) {
+            float Y = (g.r + g.g + g.b) * 0.333;
+            float tmF = 1.0 / sqrt(Y * Y + 1.0);
+            if (uTonemapLowContrast) // normal reinhard
+                tmF = 1.0 / (Y + 1.0);
+            
+            vec3 oldg = g;
+            g = g * tmF;
+
+            if (uMakeup)
+            {
+                // Re-normalizing based on exposure so the midtones don't tank
+                // Note: this only makes sense for non-HDR inputs. Our input is SDR.
+                // This is the tmF_W logic from the original shader
+                float tmF_W = uExposure / sqrt(uExposure * uExposure + 1.0);
+                if (uTonemapLowContrast)
+                    tmF_W = uExposure / (uExposure + 1.0);
+                g /= tmF_W;
+            }
+
+            // Only tonemap when exposure is far from 1.0
+            g = mix(oldg, g, clamp((uExposure - 1.0) * 4.0, 0.0, 1.0));
+        }
+
+        g = to_srgb(g);
+        omw_FragColor = vec4(clamp(g, 0.0, 1.0), 1.0);
+    }
+}
+
+fragment cfDebug(rt1=RT_WaterOut) {
+    omw_In vec2 omw_TexCoord;
+
+    void main() {
+        vec3 c = omw_Texture2D(RT_WaterOut, omw_TexCoord).rgb;
+        //c += 0.1;
+        c *= 10.0;
+        omw_FragColor.rgb = c;
+    }
+}
+
+technique {
+    passes =
+        pre_getPbr, pre_getNormals, pre_ssao, pre_ssao_apply, pre_getWNormals,
+        shade, water, afterWater, metal, applyFog,
+        bloom1, bloom2, bloomdone,
+        exposureTrack, exposureTrackBounce, exposure
+    ;
+    description = "...";
+    author = "Wareya";
+    version = "1.0";
+    pass_normals = true;
+    pass_lights = true;
+    flags = disable_sunglare;
+    glsl_version = 130;
+}
