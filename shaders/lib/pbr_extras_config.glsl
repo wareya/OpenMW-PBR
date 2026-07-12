@@ -29,6 +29,6 @@
 // If you're going to use deferred shading, you probably want this
 //    set to 1 to make some town terrains look less bizarre and plasticky.
 // Otherwise, leave it set to 0.
-#define PBR_EARLY_TERRAIN_VERTCOLOR_AO_HACK 1
+#define PBR_EARLY_TERRAIN_VERTCOLOR_AO_HACK 0
 
 #endif // LIB_PBR_CONFIG_EXTRAS
