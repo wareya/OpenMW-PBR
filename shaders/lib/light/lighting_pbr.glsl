@@ -73,11 +73,6 @@
 // (a value of 0 is only useful for doing debug comparisons with PBR_BYPASS 1)
 #define DO_PBR 1
 
-// output just the albedo texture
-#define NO_LIGHTING 1
-// stuff the albedo texture into the normal map other pixel
-#define NO_LIGHTING_HASH_PBR 1
-
 // use a PBR specular BRDF function inspired by godot's instead of learnopengl's
 // it's meaningfully faster, and is closer to what people will see with PBR in other games
 #define PBR_GODOT_BRDF 1
@@ -727,10 +722,12 @@ vec3 doLightingPBR(vec2 screenCoord, float alpha,
         
         normal.r = metallicity * 2.0 - 1.0;
         normal.g = roughness * 2.0 - 1.0;
+        
         int aoi = int(round(ao * 15.0));
         int shi = int(round(_shadowing * 15.0));
         int aoishi = aoi * 16 + shi;
         ao = float(aoishi) / 255.0;
+        
         normal.b = ao * 2.0 - 1.0;
     }
     else

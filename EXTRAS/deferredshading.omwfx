@@ -25,58 +25,58 @@ uniform_bool uNoExposureHDR {
     display_name = "uNoExposureHDR";
 }
 uniform_bool uLazyDiffuse3 {
-    default = true;
-    description = "...";
+    default = false;
+    description = "Outdated variant of Lazy Diffuse 2 that got rid of the smooth fresnel effect. Believe it or not, this is unrealistic. Looks a lot like FON.";
     display_name = "uLazyDiffuse3";
 }
 uniform_bool uLazyDiffuse2 {
-    default = false;
-    description = "...";
-    display_name = "uLazyDiffuse2";
+    default = true;
+    description = "Custom variant of Hammon that's fitted to different data and looks more realistic (more like oren-nayar) on very rough objects.";
+    display_name = "uLazyDiffuse2 (recommended)";
 }
 uniform_bool uLazyDiffuse {
     default = false;
-    description = "...";
+    description = "Cheap approximation of Hammon Diffuse.";
     display_name = "uLazyDiffuse";
 }
 uniform_bool uHammonDiffuse {
     default = false;
-    description = "...";
+    description = "Hammon's diffuse term, described at the relevant GDC talk. Unfortunately slightly under-estimates how bright very rough objects should be when the camera and sun are both looking straight at them.";
     display_name = "uHammonDiffuse";
 }
 uniform_bool uFujiOrenNayar {
     default = false;
-    description = "...";
+    description = "Also called FON. The final version of Fuji's Oren-Nayar approximation. Unfortunately Oren-Nayar is not fully physically realistic (it fails to take exit fresnel effects into account, and it's based on a non-GGX, i.e. unrealistic, microfacet distribution).";
     display_name = "uFujiOrenNayarDiffuse";
 }
 uniform_bool uSpecularAoHack {
     default = true;
-    description = "...";
+    description = "A form of specular AO occlusion that interprets AO as macro V-cavity closedness + extinguishes specularity based on view angle and light angle if not dead-on.";
     display_name = "uSpecularAoHack";
 }
 uniform_bool uSSAO {
     default = true;
-    description = "...";
+    description = "Not what you expect from SSAO: only affects ambient lighting, not direct lights or emissives.";
     display_name = "uSSAO";
 }
 uniform_bool uFakeSSS {
     default = true;
-    description = "...";
+    description = "Fake SSS that glows up on tangents. Extinguished by shadows.";
     display_name = "uFakeSSS";
 }
 uniform_bool uFakeSSSForce {
     default = true;
-    description = "...";
+    description = "Force SSS on everything, even if there's no PBR SSS data.";
     display_name = "uFakeSSSForce";
 }
 uniform_bool uBasicAmbientLight {
     default = false;
-    description = "...";
+    description = "Replace integrated BRDF ambient light with basically-flat ambient light. Looks less natural but more intuitive.";
     display_name = "uBasicAmbientLight";
 }
 uniform_bool uNoRaycastMetallics {
     default = false;
-    description = "...";
+    description = "Use a cheap approximation for metallics instead of raycasting. Turning this option on disables raycasting for them and makes them cheaper.";
     display_name = "uNoRaycastMetallics";
 }
 uniform_bool uNoPBR {
@@ -86,7 +86,7 @@ uniform_bool uNoPBR {
 }
 uniform_bool uAccurateSRGB {
     default = false;
-    description = "...";
+    description = "Discouraged because some morrowind assets (e.g. night sky) were designed for 2.2 gamma CRTs and look bad if the bottom of the gamma curve is linear.";
     display_name = "uAccurateSRGB (discouraged)";
 }
 uniform_float uContactShadowThickness {
@@ -258,16 +258,20 @@ shared  {
     fogValue = mix(1.0, fogValue, fadeValue);
 #endif
 
+        if (!uNoPBR)
+            fogValue *= fogValue;
+
         return fogValue;
     }
     
-    float ambientFactor = 0.7;
-    float sunFactor = 2.5;
-    float lightFactor = 2.5;
+    float ambientFactor() { return uNoPBR ? 1.0 : 0.7; }
+    float sunFactor() { return uNoPBR ? 1.0 : 2.5; }
+    float lightFactor() { return uNoPBR ? 1.0 : 2.5; }
     
     vec3 to_linear(vec3 c) {
         c = max(vec3(0.0), c);
-        //return c / 1.0;
+        //if (uNoPBR) return c*c;
+        if (uNoPBR) return c;
         if (uAccurateSRGB) {
             bvec3 cutoff = lessThan(c, vec3(0.04045));
             vec3 higher = pow((c + vec3(0.055))/vec3(1.055), vec3(2.4));
@@ -280,7 +284,8 @@ shared  {
 
     vec3 to_srgb(vec3 c) {
         c = max(vec3(0.0), c);
-        //return c * 1.0;
+        //if (uNoPBR) return sqrt(c);
+        if (uNoPBR) return c;
         if (uAccurateSRGB) {
             bvec3 cutoff = lessThan(c, vec3(0.0031308));
             vec3 higher = vec3(1.055) * pow(c, vec3(1.0/2.4)) - vec3(0.055);
@@ -405,9 +410,10 @@ shared  {
         
         float facing = 0.5 + 0.5*dotLV;
         float dotNH = (dotNL + dotNV) * inversesqrt(dot(l+v, l+v));
-        float rough = facing * 0.22 * ((2.5 + dotNH)/(dotNH));
-        float smooth_ = 1.05 * (1.0 - p5(1.0 - (dotNL * dotNV)));
-        float single = mix(smooth_, rough, r);
+        // would should be 0.22 for pure shadowing, but 0.315 to keep energy despite being single-scatter
+        float rough = facing * 0.315 * ((2.5 + dotNH)/(dotNH));
+        float smooth_ = 1.05 * (1.0 - p5(1.0 - dotNL)) * (1.0 - p5(1.0 - dotNV));
+        float single = mix(smooth_, rough, r*(2.0-r));
         
         return vec3(single) * lambert;
     }
@@ -606,7 +612,7 @@ shared  {
         vec3 ambLightSemiRough = ambientGuess(n.z, min(acolor, ac), 0.7);
         vec3 ambLight = ambientGuess(n.z, acolor, roughness) * 0.35; // 0.35 is an arbitrary darkening hack
         
-        float af = ambientFactor;
+        float af = ambientFactor();
         
         if (uNoPBR)
         {
@@ -1057,7 +1063,7 @@ fragment shade(rt1=RT_Norm, rt2=RT_PBR, rt3=RT_OutMicroMemory, target=RT_PongOut
         
         vec3 scolor = to_linear(omw.sunColor.rgb);
         float svis = omw.sunColor.a;
-        perLight(accum, scolor, svis * shadow * sunFactor * c_shadowing, -omw.sunVec.xyz, vdir, n, metallicity, sun_rough, ao, sss, c);
+        perLight(accum, scolor, svis * shadow * sunFactor() * c_shadowing, -omw.sunVec.xyz, vdir, n, metallicity, sun_rough, ao, sss, c);
         
         for (int i = 0; i < omw_GetPointLightCount(); i++)
         {
@@ -1113,7 +1119,7 @@ fragment shade(rt1=RT_Norm, rt2=RT_PBR, rt3=RT_OutMicroMemory, target=RT_PongOut
             }
             p_shadowing *= p_shadowing;
             
-            perLight(accum, color, falloff * p_shadowing * lightFactor, dir, vdir, n, metallicity, roughness, ao, sss, c);
+            perLight(accum, color, falloff * p_shadowing * lightFactor(), dir, vdir, n, metallicity, roughness, ao, sss, c);
         }
         
         accum = max(vec3(0.0), accum);
@@ -1185,6 +1191,8 @@ fragment water(rt1=RT_WNorm, rt2=RT_PongOut1, target=RT_WaterOut) {
                     skyboxEstimate = mix(omw.ambientColor.rgb * 0.2, omw.fogColor.rgb * 0.2, upz);
                 }
                 
+                skyboxEstimate = to_linear(skyboxEstimate);
+                
                 vec2 uv;
                 vec4 reflcolor = doRaymarch(wpos, refl, RT_PongOut1, false, 0.0, uv);
                 
@@ -1201,11 +1209,12 @@ fragment water(rt1=RT_WNorm, rt2=RT_PongOut1, target=RT_WaterOut) {
                         float fv2 = 1.0 - EstimateFogCoverageFromUV2(uv, d2f);
                         float fv3 = fv2 / (fv1 + 0.01);
                         fv3 = clamp(1.0 - fv3, 0.0, 1.0);
-                        reflcolor.rgb = mix(reflcolor.rgb, omw.fogColor.rgb, fv3);
+                        reflcolor.rgb = mix(reflcolor.rgb, to_linear(omw.fogColor.rgb), fv3);
                     }
                 }
                 
-                reflcolor.rgb = mix(to_linear(skyboxEstimate), reflcolor.rgb, max(0.0, reflcolor.a));
+                reflcolor.rgb = mix(skyboxEstimate, reflcolor.rgb, max(0.0, reflcolor.a));
+                
                 
                 omw_FragColor.rgb = mix(c, reflcolor.rgb, 1.0 - fresnel);
                 omw_FragColor.rgb = omw_FragColor.rgb;
@@ -1296,15 +1305,17 @@ fragment applyFog(rt1=RT_PongOut1, target=RT_PongOut2) {
         vec3 wpos = omw_GetWorldPosFromUV(omw_TexCoord);
         vec3 eyepos = omw.eyePos.xyz;
         
-        float upz = 1.0 - abs(normalize(eyepos - wpos).z);
+        float upz = 1.0 - max(0.0, normalize(wpos - eyepos).z);
         upz *= upz;
         upz = mix(upz, 1.0, 0.5);
         vec3 skyboxEstimate = mix(omw.skyColor.rgb, omw.fogColor.rgb, upz);
+        skyboxEstimate = to_linear(skyboxEstimate);
+        
+        float watera = eyepos.z - omw.waterHeight;
         
         float d = omw_GetLinearDepth(omw_TexCoord);
         if (omw.isWaterEnabled)
         {
-            float watera = eyepos.z - omw.waterHeight;
             float waterb = wpos.z - omw.waterHeight;
             
             if (sign(watera) != sign(waterb))
@@ -1318,7 +1329,7 @@ fragment applyFog(rt1=RT_PongOut1, target=RT_PongOut2) {
             }
         }
         
-        if (d == omw.far)
+        if (d == omw.far && watera > 0.0)
         {
             #if (OMW_REVERSE_Z == 1)
             float rawskydepth = 0.0;
@@ -1406,8 +1417,7 @@ fragment exposureTrack(rt1=RT_OutMicroMemory, rt2=RT_ExpTrack1, target=RT_ExpTra
     omw_In vec2 omw_TexCoord;
     void main() {
         vec4 c1 = omw_Texture2D(RT_OutMicroMemory, omw_TexCoord);
-        //c1.rgb = to_srgb(c1.rgb);
-        c1.rgb = sqrt(max(vec3(0.0), c1.rgb));
+        c1.rgb = to_srgb(c1.rgb);
         vec4 c2 = omw_Texture2D(RT_ExpTrack1, omw_TexCoord) + 0.2;
         // unfortunately, this lerp is unstable at extremely low delta times, so we have to enforce a minimum delta time
         float f = 1.0 - exp(-2.0 * max(0.002, omw.deltaSimulationTime));
@@ -1438,7 +1448,9 @@ fragment exposure(rt1=RT_PongOut1, rt2=RT_ExpTrack1) {
         
         //float uExposure = 3.5;
         //float uExposure = 1.0 / (omw_Texture2D(RT_ExpTrack1, vec2(0.5)).r);
-        float uExposure = 1.0 / (omw_Texture2D(RT_ExpTrack1, vec2(0.5)).r + 0.2 + 0.01);
+        float ev = omw_Texture2D(RT_ExpTrack1, vec2(0.5)).r + 0.2;
+        if (uNoPBR) ev = sqrt(ev);
+        float uExposure = 1.0 / (ev + 0.01);
         //uExposure = 10.0;
         //float uExposure = 20.0;
         float uThreshold = 1.0;
