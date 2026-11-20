@@ -228,21 +228,13 @@ void parallaxDerivativeHelper(vec2 adjustedUV, vec2 origAdjustedUV, out vec2 dX,
 
 #if PBR_SELF_SHADOW
 
-struct DirectionalLight {
-    vec4 position;
-    vec4 diffuse;
-    vec4 ambient;
-    vec4 specular;
-};
-uniform DirectionalLight sun;
-
-float selfShadowApprox(float shadowing, sampler2D tx, vec2 uv, mat3 normalToViewMatrix)
+float selfShadowApprox(float shadowing, sampler2D tx, vec2 uv, mat3 normalToViewMatrix, vec3 sunDirView)
 {
     // The math here is almost entirely "practical bodge".
     // It has a basis in physical reality, but that basis is paper-thin.
     // Don't try too hard to understand it.
     
-    vec3 sun_ld_view = normalize(sun.position.xyz);
+    vec3 sun_ld_view = sunDirView;
     vec3 sun_ld_tan = inverse(normalToViewMatrix) * sun_ld_view;
     // We intentionally use the spherical instead of planar light direction
     //  to limit the light skew angle to ~45 degrees. If we were to not implicitly

@@ -181,7 +181,6 @@ float unshadowedLightRatio(float distance)
 {
     return unshadowedLightRatioOffset(distance, vec3(0.0));
 }
-
 void applyShadowDebugOverlay()
 {
 #if SHADOWS && @useShadowDebugOverlay

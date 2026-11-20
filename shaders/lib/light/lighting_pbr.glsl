@@ -33,6 +33,7 @@
 #define PBR_SPECULAR_AO_HACK_DEFAULT 0
 #define PBR_NO_AMBENVGUESS_DEFAULT 1
 #define PBR_EDGE_NORMAL_HACK_DEFAULT 0
+#define PBR_SPECULAR_MULTISCATTER 0
 #else
 #define PBR_GAMMA_DEFAULT 2.2
 #define PBR_RANGEMUL_DEFAULT 2.0
@@ -45,6 +46,7 @@
 #define PBR_SPECULAR_AO_HACK_DEFAULT 1
 #define PBR_NO_AMBENVGUESS_DEFAULT 0
 #define PBR_EDGE_NORMAL_HACK_DEFAULT 1
+#define PBR_SPECULAR_MULTISCATTER 1
 #endif
 
 // bypass all PBR logic and use vanilla shading
@@ -161,6 +163,9 @@
 // a variant of oren nayar that works better on non-PBR albedo textures and in non-pathtracer settings
 // as described in the EON paper (arXiv:2410.18026v2)
 #define PBR_DIFFUSE_FUJI_OREN_NAYAR 0
+// a modified version of Hammon's 2017 diffuse function that's closer to being energy-preserving, but is designed
+// against slightly different data (self-shadowing rasterized distorted spheres instead of Smith-GGX)
+#define PBR_DIFFUSE_LAZYDIFFUSE2 1
 
 // cartoon mode
 #define PBR_DIFFUSE_CELSHADE 0
@@ -313,6 +318,48 @@ float Burley(vec3 lightDir, vec3 normalDir, vec3 viewDir, vec3 halfDir, float li
     #endif
 }
 
+float p5(float x)
+{
+    return (x*x)*(x*x)*x;
+}
+// Modified version of Hammon's diffuse function that's closer to being energy-preserving.
+vec3 LazyDiffuse2(vec3 c, vec3 l, vec3 n, vec3 v, float lambert, float r, float r_art)
+{
+    float dotLV = dot(l, v);
+    float dotNL = lambert;
+    float dotNV = max(0.0, dot(n, v));
+    
+    //float q = max(0.0, (r_art-0.1) * (1.95-r_art));
+    //float q = r_art*((r_art-3.15)*r_art + 3.46) - 0.424;
+    // manual graphing calculator fit of:
+    /*
+    1.0  -> 0.85, 0.33
+    0.87 -> 0.85, 0.32
+    0.75 -> 0.80, 0.3
+    0.62 -> 0.75, 0.27
+    0.5  -> 0.70, 0.24
+    0.42 -> 0.60, 0.18
+    0.38 -> 0.55, 0.17
+    0.35 -> 0.50, 0.14
+    0.3  -> 0.35, 0.1
+    0.25 -> 0.20, 0.07
+    0.18 -> 0.10, 0.03
+    0.1  -> n/a, n/a
+    */
+    float q = r_art*((r_art-3.05)*r_art + 3.35) - 0.424;
+
+    float facing = 0.5 + 0.5*dotLV;
+    float dotNH = (dotNL + dotNV) * inversesqrt(dot(l+v, l+v));
+    float rough = facing * 0.22 * ((2.5 + dotNH)/(dotNH + 0.04));
+    float viewTerm = (1.0 - p5(1.0 - dotNV));
+    float liTerm = (1.0 - p5(1.0 - dotNL));
+    float smooth_ = 1.05 * liTerm * viewTerm;
+    float single = mix(smooth_, rough, q);
+
+    vec3 multi = q * 0.33 * c;
+    
+    return (single + multi) * lambert;
+}
 vec3 project(vec3 u, vec3 v)
 {
     return dot(u, v) / dot(v, v) * v;
@@ -554,31 +601,65 @@ vec3 perLightPBR(float sss, float alpha, vec3 diffuseColor, vec3 diffuseVertexCo
         // reduce specularity by incidence against plane normal to conserve energy
         adjust = clamp((adjust-0.07)*4.0, 0.0, adjust);
     #endif
+    
+    
+    float f90_part = 0.0;
+    float f0_part = 0.0;
+    #if PBR_SPECULAR_MULTISCATTER
+    // approximation of the DFG integral for metallic energy compensation etc
+    {
+        float vdot = dot(normalDir, viewDir);
+        vdot = max(-vdot*0.25, vdot);
+        float r = roughness;
+        float r_artist = sqrt(roughness);
+        
+        float inv_roughness = 1.0 - r_artist;
+        float inv_roughness_2 = inv_roughness*inv_roughness;
+        float inv_vdot = max(0.0, 1.0 - vdot);
+        float bad_dfg = inv_roughness_2 * p5(inv_vdot);
+        f90_part = bad_dfg*0.96 + 0.1;
+        //f0_part = mix((1.0 - bad_dfg), 1.0, r*0.5);
+        //f0_part = mix((1.0 - bad_dfg), 0.2-r*(vdot*0.5+0.5), r*0.5);
+        f0_part = mix(0.6*(2.0*r_artist-r), 0.34, 1.0 - inv_vdot*inv_vdot);
+        //f0_part = mix(0.185, 0.095, 1.0 - inv_vdot*inv_vdot);
+        f0_part = mix(0.96+vdot*vdot*0.2, f0_part, r);
+    }
+    // mutliscatter energy compensation term
+    vec3 spec_scale = 1.0 + diffuseColor * (1.0 / f0_part - 1.0);
+    #else
+    vec3 spec_scale = vec3(1.0);
+    #endif
+    
     specular *= adjust * specularMask;
 
 #if DO_PBR
-    vec3 lambert = vec3(baseIncidence * (falloff * (1.0/PI)));
+    vec3 diffuseIllum = vec3(baseIncidence * (falloff * (1.0/PI)));
+    vec3 diff_fresnel = (1.0 - fresnel) * (1.0 - metallicity);
     
     #if PBR_DIFFUSE_BURLEY || PBR_DIFFUSE_BURLEY_APPROX
-    lambert = vec3(Burley(lightDir, normalDir, viewDir, halfDir, baseIncidence, roughness) * (falloff * (1.0/PI)));
+    diffuseIllum = vec3(Burley(lightDir, normalDir, viewDir, halfDir, baseIncidence, roughness) * (falloff * (1.0/PI)));
     #endif
     #if PBR_DIFFUSE_OREN_NAYAR
-    lambert = OrenNayarNotrig(diffuseColor, lightDir, normalDir, viewDir, halfDir,
+    diffuseIllum = OrenNayarNotrig(diffuseColor, lightDir, normalDir, viewDir, halfDir,
         baseIncidence, roughness) * (falloff * (1.0/PI));
     #endif
     #if PBR_DIFFUSE_OREN_NAYAR_APPROX
-    lambert = OrenNayarApprox(diffuseColor, lightDir, normalDir, viewDir, halfDir,
+    diffuseIllum = OrenNayarApprox(diffuseColor, lightDir, normalDir, viewDir, halfDir,
         baseIncidence, roughness) * (falloff * (1.0/PI));
     #endif
     #if PBR_DIFFUSE_FUJI_OREN_NAYAR
-        lambert = vec3(FujiOrenNayar(lightDir, normalDir, viewDir, baseIncidence, roughness) * (falloff * (1.0/PI)));
+        diffuseIllum = vec3(FujiOrenNayar(lightDir, normalDir, viewDir, baseIncidence, roughness) * (falloff * (1.0/PI)));
+    #endif
+    #if PBR_DIFFUSE_LAZYDIFFUSE2
+        diffuseIllum = LazyDiffuse2(diffuseColor, lightDir, normalDir, viewDir, baseIncidence, roughness, sqrt(roughness)) * (falloff * (1.0/PI));
+        diff_fresnel = vec3((1.0 - f0) * (1.0 - metallicity));
     #endif
     #if PBR_DIFFUSE_CELSHADE
-        lambert = vec3(min(1.0, baseIncidence*64.0) * (falloff * (1.0/PI)));
+        diffuseIllum = vec3(min(1.0, baseIncidence*64.0) * (falloff * (1.0/PI)));
     #endif
     
-    vec3 diff = diffuseColor * lambert  * (lightColor * shadowing) * (1.0 - fresnel) * (1.0 - metallicity);
-    vec3 spec = vec3(1.0)    * specular * (lightColor * shadowing) * fresnel;
+    vec3 diff = diffuseColor * diffuseIllum  * (lightColor * shadowing) * diff_fresnel;
+    vec3 spec = vec3(1.0)    * specular * (lightColor * shadowing) * fresnel * spec_scale;
     // the specular term was already divided by pi in the BRDF function (distGGX specifically)
     // likewise, metallicity was taken into account when calculating the f0 component for specularity
     
@@ -714,27 +795,31 @@ vec3 doLightingPBR(vec2 screenCoord, float alpha,
     //if ((int(screenCoord.x + screenCoord.y) & 1) == 0)
     if (int((screenCoord.x + screenCoord.y) / 2) == int((screenCoord.x + screenCoord.y + 1) / 2))
     {
-        sss = 1.0;
-        int mi = int(round(metallicity * 15.0));
-        int si = int(round(sss * 15.0));
-        int msi = mi * 16 + 15;
+        ao *= clamp(dot(ambientColor/(diffuseVertexColor + 0.01), vec3(1.0/3.0)), 0.0, 1.0);
+        int mi = int(floor(metallicity * 15.0 + 0.5));
+        int si = int(floor(sss * 15.0 + 0.5));
+        int msi = mi * 16 + si;
         metallicity = float(msi) / 255.0;
         
         normal.r = metallicity * 2.0 - 1.0;
+        
+        
+        float emc = dot(emissiveColor, vec3(1.0/3.0));
+        emc /= dot(diffuseVertexColor, vec3(1.0/3.0)) + 0.01;
+        emc = clamp(emc, 0.0, 1.0);
+        int ri = int(floor(roughness * 15.0 + 0.5));
+        int ei = int(floor(emc * 15.0 + 0.5));
+        int rei = ri * 16 + ei;
+        roughness = float(rei) / 255.0;
+        
         normal.g = roughness * 2.0 - 1.0;
         
-        int aoi = int(round(ao * 15.0));
-        int shi = int(round(_shadowing * 15.0));
+        int aoi = int(floor(ao * 15.0 + 0.5));
+        int shi = int(floor(_shadowing * 15.0 + 0.5));
         int aoishi = aoi * 16 + shi;
         ao = float(aoishi) / 255.0;
         
         normal.b = ao * 2.0 - 1.0;
-    }
-    else
-    {
-        float emc = dot(emissiveColor, vec3(1.0/3.0));
-        emc = mix(1.0, 0.5, clamp(emc, 0.0, 1.0));
-        normal *= emc;
     }
 #endif
     return diffuseColor * diffuseVertexColor;

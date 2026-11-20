@@ -20,30 +20,38 @@ varying vec2 normalMapUV;
 
 // Other shaders respect forcePPL, but legacy groundcover mods were designed to work with vertex lighting.
 // They may do not look as intended with per-pixel lighting, so ignore this setting for now.
+//#define PER_PIXEL_LIGHTING @normalMap
+// For PBR you always need PPL.
 #define PER_PIXEL_LIGHTING 1
 
 varying float euclideanDepth;
 varying float linearDepth;
 uniform vec2 screenRes;
+uniform float near;
 uniform float far;
 uniform float alphaRef;
 
 #if PER_PIXEL_LIGHTING
-varying vec3 passViewPos;
+#include "lib/light/clamp.glsl"
 #else
 centroid varying vec3 shadedLighting;
 centroid varying vec3 passLighting;
 #endif
 
 varying vec3 passNormal;
+varying vec3 passViewPos;
 
 #include "shadows_fragment.glsl"
 #include "lib/material/alpha.glsl"
 #include "fog.glsl"
 #include "compatibility/normals.glsl"
 
+centroid varying vec4 passColor;
+
 void main()
 {
+    Material material = getMaterial();
+
 #if @diffuseMap
     gl_FragData[0] = texture2D(diffuseMap, diffuseMapUV);
 #else
@@ -77,7 +85,7 @@ void main()
         vec4(0.0), vec3(1.0), vec3(0.0), vec3(1.0), gl_FragData[0].xyz, false, false);
 #endif
 
-    gl_FragData[0] = applyFogAtDist(gl_FragData[0], euclideanDepth, linearDepth, far);
+    gl_FragData[0] = applyFogAtDist(gl_FragData[0], passViewPos, euclideanDepth, linearDepth, near, far);
 
 #if !@disableNormals
     gl_FragData[1].xyz = viewNormal * 0.5 + 0.5;

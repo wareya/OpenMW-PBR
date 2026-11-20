@@ -3,25 +3,45 @@ sampler_2d dfg {
     mag_filter = nearest;
     min_filter = nearest;
 }
+sampler_2d tx_perlinnoise {
+    source = "shaders/textures/perlinnoise.png";
+    mag_filter = linear;
+    min_filter = linear_mipmap_linear;
+    wrap_s = repeat;
+    wrap_t = repeat;
+}
+
+sampler_2d tx_superbluenoise {
+    source = "shaders/textures/superbluenoise.png";
+    mag_filter = nearest;
+    min_filter = nearest;
+    wrap_s = repeat;
+    wrap_t = repeat;
+}
 
 uniform_bool uDisable {
     default = false;
-    description = "...";
+    description = "Disables the effect";
     display_name = "uDisable";
 }
 uniform_bool uContactShadow {
     default = true;
-    description = "...";
+    description = "Enable contact shadows. Default on";
     display_name = "uContactShadow";
 }
 uniform_bool uBloom {
     default = true;
-    description = "...";
+    description = "Enable bloom. Default on";
     display_name = "uBloom";
+}
+uniform_bool uPointLightGlow {
+    default = true;
+    description = "Point light glow, default on";
+    display_name = "uPointLightGlow";
 }
 uniform_bool uNoExposureHDR {
     default = false;
-    description = "...";
+    description = "Disable autoexposure and HDR tone mapping. Default off (yes autoexposure+tonemapping)";
     display_name = "uNoExposureHDR";
 }
 uniform_bool uLazyDiffuse3 {
@@ -54,6 +74,11 @@ uniform_bool uSpecularAoHack {
     description = "A form of specular AO occlusion that interprets AO as macro V-cavity closedness + extinguishes specularity based on view angle and light angle if not dead-on.";
     display_name = "uSpecularAoHack";
 }
+uniform_bool uTrueAccurateSpecularBrightness {
+    default = false;
+    description = "Physically accurate specularity is extremely bright, especially on textures that were designed for non-PBR rendering. This shader can reduce specularity brightness to make it look more natural on non-PBR textures. Disabling this option gives that behavior.";
+    display_name = "uTrueAccurateSpecularBrightness";
+}
 uniform_bool uSSAO {
     default = true;
     description = "Not what you expect from SSAO: only affects ambient lighting, not direct lights or emissives.";
@@ -79,10 +104,30 @@ uniform_bool uNoRaycastMetallics {
     description = "Use a cheap approximation for metallics instead of raycasting. Turning this option on disables raycasting for them and makes them cheaper.";
     display_name = "uNoRaycastMetallics";
 }
+uniform_bool uVoluFog {
+    default = false;
+    description = "Hacky volumetric fog, demonstration of what deferred rendering is good at.";
+    display_name = "uVoluFog";
+}
+uniform_bool uVoluFogLowres {
+    default = false;
+    description = "Hacky volumetric fog, demonstration of what deferred rendering is good at.";
+    display_name = "uVoluFogLowres";
+}
 uniform_bool uNoPBR {
     default = false;
-    description = "...";
+    description = "Disables PBR lighting and tries to use vanilla-style lighting. Not exactly the same.";
     display_name = "uNoPBR";
+}
+uniform_bool uNoCheckerboardPBRInput {
+    default = false;
+    description = "Disables the processing of forward-shader-produced checkerboard-driven data, uses defaults instead.\n\nNOTE: THIS MEANS THAT PBR TEXTURES WILL NOT WORK.\n\n>>>SHADOWS ALSO WILL NOT WORK!<<<";
+    display_name = "uNoCheckerboardPBRInput";
+}
+uniform_bool uNoNormalsInput {
+    default = false;
+    description = "";
+    display_name = "uNoNormalsInput";
 }
 uniform_bool uAccurateSRGB {
     default = false;
@@ -96,6 +141,39 @@ uniform_float uContactShadowThickness {
     step = 2.5;
     description = "....";
     display_name = "uContactShadowThickness";
+}
+uniform_float uSunContactShadowDistanceFactor1 {
+    default = 1.0;
+    min = 0.2;
+    max = 5.0;
+    step = 0.2;
+    description = "....";
+    display_name = "uSunCntctShdwDstncFctr1";
+}
+uniform_float uSunContactShadowDistanceFactor2 {
+    default = 1.0;
+    min = 0.2;
+    max = 2.0;
+    step = 0.2;
+    description = "....";
+    display_name = "uSunCntctShdwDstncFctr2";
+}
+
+render_target RT_Fog {
+    internal_format = rgba16f;
+    source_type = half_float;
+    source_format = rgba;
+    mipmaps = false;
+    min_filter = linear;
+    mag_filter = linear;
+}
+render_target RT_Fog2 {
+    internal_format = rgba16f;
+    source_type = half_float;
+    source_format = rgba;
+    mipmaps = false;
+    min_filter = linear;
+    mag_filter = linear;
 }
 
 render_target RT_Norm {
@@ -126,6 +204,15 @@ render_target RT_SSAO {
 }
 
 render_target RT_PBR {
+    internal_format = rgba16f;
+    source_type = half_float;
+    source_format = rgba;
+    mipmaps = false;
+    min_filter = nearest;
+    mag_filter = nearest;
+}
+
+render_target RT_PBR_EXTRAS {
     internal_format = rgba16f;
     source_type = half_float;
     source_format = rgba;
@@ -201,6 +288,16 @@ render_target RT_Bloom2 {
     mag_filter = linear;
 }
 
+render_target RT_OutMicroMemory0 {
+    internal_format = rgba16f;
+    source_type = half_float;
+    source_format = rgba;
+    height = 256;
+    width = 256;
+    mipmaps = true;
+    min_filter = linear_mipmap_linear;
+    mag_filter = linear;
+}
 render_target RT_OutMicroMemory {
     internal_format = rgba16f;
     source_type = half_float;
@@ -233,12 +330,49 @@ render_target RT_ExpTrack2 {
 }
 
 shared  {
+    #if (OMW_REVERSE_Z == 1)
+    float rawskydepth = 0.0;
+    #else
+    float rawskydepth = 1.0;
+    #endif
+
     float dither(vec2 uvp)
     {
-        uvp.x += mod(float(omw.frameNumber), 2.0);
-        return fract(uvp.x * 1.555 + uvp.y*1.31);
+        uvp.y += mod(float(omw.frameNumber), 2.0) * 1.0;
+        return fract(uvp.x * 1.55 + uvp.y*1.315);
     }
-    
+    float hash1(float x)
+    {
+        return fract(sin(x)*15151.515);
+    }
+    float hash2(vec2 v)
+    {
+        return hash1(v.x + v.y*4.295);
+    }
+    float hashb(vec2 v)
+    {
+        v = floor(v) + 0.5;
+        v.x += round(mod(float(omw.frameNumber) - 1.0, 3.0) * 0.5);
+        v.y -= round(mod(float(omw.frameNumber), 3.0) * 0.5);
+        
+        // track camera somewhat to make it look less weird
+        //v.x -= round(atan(omw.viewMatrix[1][0], omw.viewMatrix[0][0])*700.0);
+        //v.y -= round(omw.viewMatrix[1][1]*900.0);
+        // nope, the atan is too slow for this path
+        
+        return texelFetch(tx_superbluenoise, ivec2(v) % 64, 0).r;
+        //return omw_Texture2D(tx_superbluenoise, v * (1.0/64.0)).r;
+        
+        float a = hash2(v);
+        float b = hash2(v + vec2(1.0, 0.0));
+        float c = hash2(v + vec2(0.0, 1.0));
+        float r = 0.5 * a - 0.25 * b - 0.25 * c + 0.5;
+        r = r*r*(1.5-r)*2.0;
+        r = mix(r, r*r*(1.5-r)*2.0, 0.65);
+        
+        return r;
+    }
+
     float EstimateFogCoverageFromUV2(vec2 uv, float dist)
     {
 #if OMW_RADIAL_FOG
@@ -254,7 +388,7 @@ shared  {
 #endif
 #if 1
     float fadeValue = clamp((omw.far - dist) / (omw.far * 0.1), 0.0, 1.0);
-    fadeValue *= fadeValue;
+    fadeValue = smoothstep(0.0, 1.0, fadeValue);
     fogValue = mix(1.0, fogValue, fadeValue);
 #endif
 
@@ -264,7 +398,7 @@ shared  {
         return fogValue;
     }
     
-    float ambientFactor() { return uNoPBR ? 1.0 : 0.7; }
+    float ambientFactor() { return uNoPBR ? 1.0 : 2.5; }
     float sunFactor() { return uNoPBR ? 1.0 : 2.5; }
     float lightFactor() { return uNoPBR ? 1.0 : 2.5; }
     
@@ -296,6 +430,48 @@ shared  {
         return pow(c, vec3(1.0/2.2));
     }
 
+    vec4 get_fog_analytic(vec2 uv, float d)
+    {
+        vec3 wpos = omw_GetWorldPosFromUV(uv);
+        vec3 eyepos = omw.eyePos.xyz;
+        
+        float upz = 1.0 - max(0.0, normalize(wpos - eyepos).z);
+        upz *= upz;
+        upz = mix(upz, 1.0, 0.5);
+        
+        vec3 skyboxEstimate = mix(omw.skyColor.rgb, omw.fogColor.rgb, upz);
+        skyboxEstimate = to_linear(skyboxEstimate);
+
+        float watera = eyepos.z - omw.waterHeight;
+        bool view_underwater = watera < 0.0 && omw.isWaterEnabled;
+        if (view_underwater) skyboxEstimate = to_linear(omw.fogColor.rgb);
+        
+        float df = d;
+        float fogCoverage = EstimateFogCoverageFromUV2(uv, df);
+        
+        vec4 retval = vec4(skyboxEstimate, fogCoverage);
+        
+        return retval;
+    }
+    vec4 get_fog(vec2 uv, float d, sampler2D fogsampler)
+    {
+        vec4 retval = get_fog_analytic(uv, d);
+        
+        vec3 eyepos = omw.eyePos.xyz;
+        float watera = eyepos.z - omw.waterHeight;
+        bool view_underwater = watera < 0.0 && omw.isWaterEnabled;
+        
+        if (uVoluFog && !view_underwater)
+        {
+            vec4 fs = omw_Texture2D(fogsampler, uv);
+            return fs;
+        }
+        else
+        {
+            return retval;
+        }
+    }
+    
     float d_to_linear(float test)
     {
         #if (OMW_REVERSE_Z == 1)
@@ -358,8 +534,11 @@ shared  {
 
     float p5(float x)
     {
-        //x = abs(x);
         return (x*x)*(x*x)*x;
+    }
+    float p4(float x)
+    {
+        return (x*x)*(x*x);
     }
     vec3 HammonDiffuse(vec3 diffuseAlbedo, vec3 l, vec3 n, vec3 v, float lambert, float r)
     {
@@ -411,11 +590,16 @@ shared  {
         float facing = 0.5 + 0.5*dotLV;
         float dotNH = (dotNL + dotNV) * inversesqrt(dot(l+v, l+v));
         // would should be 0.22 for pure shadowing, but 0.315 to keep energy despite being single-scatter
-        float rough = facing * 0.315 * ((2.5 + dotNH)/(dotNH));
+        //float rough = facing * 0.315 * ((2.5 + dotNH)/(dotNH));
+        float rough = facing * 0.23 * ((2.5 + dotNH)/(dotNH + 0.04));
         float smooth_ = 1.05 * (1.0 - p5(1.0 - dotNL)) * (1.0 - p5(1.0 - dotNV));
         float single = mix(smooth_, rough, r*(2.0-r));
         
-        return vec3(single) * lambert;
+        // non-chromatic multiscattering brightening term, because non-pbr textures usually have
+        // multiscatter albedo saturation and brighness changes baked in
+        float multi = 0.26 * r;
+        
+        return vec3(single + multi) * lambert;
     }
     
     // fudged modified to be closer to being energy-preserving. messed around with https://www.shadertoy.com/view/sf3GD8 a lot.
@@ -483,7 +667,7 @@ shared  {
         ) * PBR_DIFFUSE_OREN_NAYAR_ALBEDO_COMPENSATION, r));
     }
     
-    vec4 doRaymarch(vec3 wpos, vec3 refl, sampler2D reftex, bool forceFuzz, float mip, out vec2 uv)
+    vec4 doRaymarch(vec3 wpos, vec3 refl_normal, vec3 refl, sampler2D reftex, bool forceFuzz, float mip, out vec2 uv)
     {
         vec4 reflcolor = vec4(0.0);
         
@@ -507,7 +691,7 @@ shared  {
         // TODO: limit s2 to screen bounds
         
         vec4 color = vec4(0.0);
-        float accuracy = 16.0;
+        float accuracy = 64.0;
         bool hit = false;
         vec2 hits = vec2(0.0);
         bool was_skip = false; // for an edge case in linear contact approximation
@@ -521,10 +705,22 @@ shared  {
             duv = (round(duv * omw.resolution) + 0.5) * omw.rcpResolution;
             float comp = omw_GetLinearDepth(duv);
             
+            float thickness = 100.0;
+            
+            // sample is behind reflection plane, force skip it
+            bool force_skip = dot(normalize(s.xyz - wpos), refl_normal) < -0.05;
+            
             bool skip =
-                comp + surface_distance*2e-3 < s.z - 100.0 // thickness check
-                && comp < surface_distance - 100.0 // likely false occluder check
+                // thickness check
+                (comp + surface_distance*2e-3) - s.z < thickness
+                // heuristic: likely false occluder check
+                // source: I made it up
+                && surface_distance - comp + thickness * t > thickness * 0.2
             ;
+            
+            //if (force_skip) skip = true;
+            
+            //skip = false;
             if (comp + surface_distance*2e-3 < s.z
                 && !skip
             )
@@ -542,7 +738,7 @@ shared  {
                     duv = mix(duv, duv0, tval);
                 }
                 
-                reflcolor.rgb = texture2DLod(reftex, duv, mip).rgb;
+                reflcolor.rgb = textureLod(reftex, duv, mip).rgb;
                 //reflcolor.rgb = omw_Texture2D(reftex, duv).rgb;
                 uv = duv;
                 reflcolor.a = 1.0;
@@ -559,7 +755,7 @@ shared  {
             float comp = omw_GetLinearDepth(duv);
             if (comp * 1.01 >= omw.far)
             {
-                reflcolor.rgba = vec4(texture2DLod(reftex, duv, mip).rgb, 1.0);
+                reflcolor.rgba = vec4(textureLod(reftex, duv, mip).rgb, 1.0);
                 //reflcolor.rgba = vec4(omw_Texture2D(reftex, duv).rgb, 1.0);
                 uv = duv;
                 hits = s2.xy;
@@ -586,8 +782,6 @@ shared  {
         return reflcolor;
     }
     
-    
-    
     vec3 ambientGuess(float height, vec3 ambientTerm, float roughness)
     {
         float t = clamp(height/(roughness + 0.01), -1.0, 1.0);
@@ -600,17 +794,23 @@ shared  {
     {
         vdir = -vdir;
         
+        float rayheight = reflect(-vdir, n).z;
+        rayheight = mix(rayheight, n.z, roughness);
+        
         //vec3 nworld = (osg_ViewMatrixInverse * vec4(normal, 0.0)).xyz;
-        vec3 ambLightRough = ambientGuess(n.z, acolor, 0.7);
+        vec3 ambLightRough = ambientGuess(rayheight, acolor, 0.7);
         //vec3 ambLightSemiRough = ambLightRough;
         //vec3 ambLightSemiRough = texture2DLod(reftex, vec2(0.5, 0.5), 80.0).rgb;
         
         vec3 ac = vec3(0.0);
-        ac += texture2D(reftex, vec2(0.5, 0.5)).rgb;
+        if (!smoothPart)
+            ac += omw_Texture2D(reftex, vec2(0.5, rayheight*0.5+0.4)).rgb;
+        else
+            ac += omw_Texture2D(omw_SamplerLastPass, vec2(0.5, rayheight*0.5+0.4)).rgb;
         ac = max(vec3(0.0), ac);
         
-        vec3 ambLightSemiRough = ambientGuess(n.z, min(acolor, ac), 0.7);
-        vec3 ambLight = ambientGuess(n.z, acolor, roughness) * 0.35; // 0.35 is an arbitrary darkening hack
+        vec3 ambLightSemiRough = ambientGuess(rayheight, min(acolor, ac), roughness);
+        vec3 ambLight = ambientGuess(rayheight, ac, roughness);
         
         float af = ambientFactor();
         
@@ -622,35 +822,49 @@ shared  {
                 return basecolor * ambLightRough * ao * af;
         }
         
-        if (smoothPart && !uNoRaycastMetallics && metallicity > 0.0)
+        if (smoothPart && !uNoRaycastMetallics
+            && metallicity > 0.01
+            )
         {
             vec2 _dummy;
-            vec4 rm = doRaymarch(wpos, reflect(-vdir, n), reftex, true, sqrt(roughness)*6.0, _dummy);
+            vec4 rm = doRaymarch(wpos, n, reflect(-vdir, n), reftex, true, sqrt(roughness)*6.0, _dummy);
             ambLight = mix(ambLight, rm.rgb, max(0.0, rm.a));
             //return ambLight;
         }
         
-        float vdot = max(0.0, dot(n, vdir));
+        float vdot = dot(n, vdir);
+        // Normals can point "away from the camera", which messes with things badly.
+        // You end up with entire regions of object that have maximum ambient specularity.
+        // Using abs instead of max0 makes the problem worse: now you have LINES of max ambient spec.
+        // Instead, we do a mix of abs and max0.
+        vdot = max(-vdot*0.25, vdot);
         float inv_roughness = 1.0 - roughness;
         float inv_roughness_2 = inv_roughness*inv_roughness;
         
-        float inv_vdot = max(0.0, 1.0 - vdot*2.0);
-        float bad_dfg = inv_roughness_2 * (inv_vdot * inv_vdot);
-        float f90_part = bad_dfg;
-        float f0_part = mix((1.0 - bad_dfg), 0.5, roughness);
+        float inv_vdot = max(0.0, 1.0 - vdot);
+        float bad_dfg = inv_roughness_2 * p5(inv_vdot);
+        float f90_part = bad_dfg*0.96;
+        float f0_part = mix((1.0 - bad_dfg), 1.0, roughness*0.5);
+        f90_part = 1.0 - f0_part;
         
-        vec2 auv = vec2(vdot, roughness);
-        auv.y = 1.0 - auv.y;
-        vec2 a = omw_Texture2D(dfg, auv).rg;
-        a = to_linear(vec3(a, 0.0)).rg;
-        f0_part = a.r;
-        f90_part = a.g;
+        //vec2 auv = vec2(vdot, roughness);
+        //auv.y = 1.0 - auv.y;
+        //vec2 a = omw_Texture2D(dfg, auv).rg;
+        //a = to_linear(vec3(a, 0.0)).rg;
+        //f0_part = a.r;
+        //f90_part = a.g;
         
         vec3 light = vec3(0.0);
         
         if (smoothPart)
         {
             light += ambLight * ao * (basecolor*f0_part + vec3(1.0)*f90_part) * metallicity;
+            if (!uBasicAmbientLight)
+            {
+                if (!uTrueAccurateSpecularBrightness)
+                    ambLightSemiRough *= 0.5;
+                light += ambLightSemiRough * ao * af * (1.0 - metallicity) * f90_part;
+            }
         }
         else
         {
@@ -659,7 +873,6 @@ shared  {
             else
             {
                 light += basecolor * ambLightRough * ao * af * (1.0 - metallicity) * f0_part;
-                light += ambLightSemiRough * ao * af * (1.0 - metallicity) * f90_part / PI;
             }
         }
         
@@ -679,16 +892,12 @@ fragment pre_getNormals(target=RT_Norm) {
         vec3 c = omw_GetNormalsWorldSpace(omw_TexCoord).rgb;
         
         // hole, need to interpolate
-        if (((uvpix.x + uvpix.y) & 1) == 1)
+        if (!uNoCheckerboardPBRInput && ((uvpix.x + uvpix.y) & 1) == 1)
         {
             vec4 c1 = vec4(omw_GetNormalsWorldSpace(omw_TexCoord + rres * vec2(1.0, 0.0)).rgb, 0.0);
-            c1.a = 2.0 - length(c1.rgb) * 2.0;
             vec4 c2 = vec4(omw_GetNormalsWorldSpace(omw_TexCoord + rres * vec2(-1.0, 0.0)).rgb, 0.0);
-            c2.a = 2.0 - length(c2.rgb) * 2.0;
             vec4 c3 = vec4(omw_GetNormalsWorldSpace(omw_TexCoord + rres * vec2(0.0, -1.0)).rgb, 0.0);
-            c3.a = 2.0 - length(c3.rgb) * 2.0;
             vec4 c4 = vec4(omw_GetNormalsWorldSpace(omw_TexCoord + rres * vec2(0.0, 1.0)).rgb, 0.0);
-            c4.a = 2.0 - length(c4.rgb) * 2.0;
             
             // EDI
             float da = length(c1 - c3);
@@ -703,15 +912,14 @@ fragment pre_getNormals(target=RT_Norm) {
         else
         {
             omw_FragColor.rgb = c;
-            omw_FragColor.a = 2.0 - length(c) * 2.0;
         }
         
-        // underwater
+        // underwater: reconstruct normals from geometry
         vec3 wpos = omw_GetWorldPosFromUV(omw_TexCoord);
         vec3 eyepos = omw.eyePos.xyz;
         float watera = eyepos.z - omw.waterHeight;
         float waterb = wpos.z - omw.waterHeight;
-        if (sign(watera) != sign(waterb) && omw.isWaterEnabled)
+        if ((sign(watera) != sign(waterb) && omw.isWaterEnabled) || uNoNormalsInput)
         {
             float span = 1.0;
             
@@ -724,7 +932,6 @@ fragment pre_getNormals(target=RT_Norm) {
             vec3 dyv = (d-c);
             
             omw_FragColor.rgb = normalize(cross(dxv.xyz, dyv.xyz));
-            omw_FragColor.a = 0.0;
         }
     }
 }
@@ -763,6 +970,21 @@ fragment pre_getWNormals(target=RT_WNorm) {
             }
             else
                 omw_FragColor.rgb = c;
+        
+            if (uNoNormalsInput)
+            {
+                float water_fraction = 1.0 - (wpos.z - omw.waterHeight) / (wpos.z - eyepos.z);
+                vec3 waterpos = mix(eyepos, wpos, water_fraction);
+                float x = omw_Texture2D(tx_perlinnoise, waterpos.xy*0.001 + omw.simulationTime * 0.02).r - 0.5;
+                x += omw_Texture2D(tx_perlinnoise, waterpos.xy*0.0002 + omw.simulationTime * 0.003).r - 0.5;
+                x += omw_Texture2D(tx_perlinnoise, waterpos.xy*0.003 - omw.simulationTime * 0.04).r - 0.5;
+                float y = omw_Texture2D(tx_perlinnoise, waterpos.xy*0.001 + vec2(0.1) - omw.simulationTime * 0.04).r - 0.5;
+                y += omw_Texture2D(tx_perlinnoise, waterpos.xy*0.0002 - vec2(0.1) - omw.simulationTime * 0.004).r - 0.5;
+                y += omw_Texture2D(tx_perlinnoise, waterpos.xy*0.003 + vec2(0.1) + omw.simulationTime * 0.02).r - 0.5;
+                float z = 1.0;
+                vec3 n = normalize(vec3(x*0.1, y*0.1, z));
+                omw_FragColor.rgb = n;
+            }
         }
     }
 }
@@ -772,7 +994,7 @@ fragment pre_getPbr(target=RT_PBR2) {
 
     float unpack(float a, out float b)
     {
-        int aibi = int(round(a * 255.0));
+        int aibi = int(floor(a * 255.0 + 0.5));
         int ai = aibi / 16;
         int bi = aibi % 16;
         b = float(bi) / 15.0;
@@ -785,29 +1007,64 @@ fragment pre_getPbr(target=RT_PBR2) {
         vec2 res = omw.resolution;
         vec2 rres = omw.rcpResolution;
         ivec2 uvpix = ivec2(omw_TexCoord * res);
-        vec4 c = vec4(omw_GetNormals(omw_TexCoord) * 0.5 + 0.5, 0.0);
+        ivec2 uvi = ivec2(omw_TexCoord * omw.resolution);
+        vec4 c = vec4(texelFetch(omw_SamplerNormals, uvi, 0).xyz, 0.0);
         c.b = unpack(c.b, c.a);
         float sss0;
         c.r = unpack(c.r, sss0);
-        c.a *= 0.999;
-        c.a += round(sss0 * 16.0);
         
-        if (((uvpix.x + uvpix.y) & 1) == 0)
+        float emissive;
+        c.g = unpack(c.g, emissive);
+        
+        // r: metal
+        // g: rough
+        // b: ao
+        // a: shadow and sss
+        
+        if (uNoCheckerboardPBRInput)
         {
-            vec4 c1 = vec4(omw_GetNormals(omw_TexCoord + rres * vec2(1.0, 0.0)) * 0.5 + 0.5, 0.0);
-            vec4 c2 = vec4(omw_GetNormals(omw_TexCoord + rres * vec2(-1.0, 0.0)) * 0.5 + 0.5, 0.0);
-            vec4 c3 = vec4(omw_GetNormals(omw_TexCoord + rres * vec2(0.0, -1.0)) * 0.5 + 0.5, 0.0);
-            vec4 c4 = vec4(omw_GetNormals(omw_TexCoord + rres * vec2(0.0, 1.0)) * 0.5 + 0.5, 0.0);
+            vec3 c = omw_GetLastShader(omw_TexCoord).rgb;
+            float x = c.g;
+            //float x2 = 1.0 - (x+-(x*x*x)*181.0*(1.0-x*2.0)*((x-1.0)*(x-1.0)*(x-1.0)));
+            //float x2 = cos(x*9.0)*0.5+0.5;
+            float x2 = abs(x-0.5)*2.0;
+            float r = mix(0.2, 0.9, clamp(x2, 0.0, 1.0));
+            float bright = dot(c, vec3(1.0/3.0));
+            vec3 grey = vec3(bright);
+            float sat = length(c - grey)/(bright+0.01);
+            float m = mix(1.0, 0.0, clamp(sat*4.0, 0.0, 1.0));
+            m -= 1.0 - clamp((bright-0.2)*4.0 + 0.2, 0.0, 1.0);
+            m = clamp((m-0.5)*4.0+0.5, 0.0, 1.0);
+            omw_FragColor = vec4(m, r, 1.0, 0.999);
+            return;
+        }
+        
+        if (((uvpix.x + uvpix.y) % 2) == 0)
+        {
+            vec4 c1 = vec4(texelFetch(omw_SamplerNormals, uvi + ivec2(1, 0), 0).xyz, 0.0);
+            vec4 c2 = vec4(texelFetch(omw_SamplerNormals, uvi + ivec2(-1, 0), 0).xyz, 0.0);
+            vec4 c3 = vec4(texelFetch(omw_SamplerNormals, uvi + ivec2(0, -1), 0).xyz, 0.0);
+            vec4 c4 = vec4(texelFetch(omw_SamplerNormals, uvi + ivec2(0, 1), 0).xyz, 0.0);
+            
+            if (texelFetch(omw_SamplerDepth, uvi + ivec2(1, 0), 0).r == rawskydepth)
+                c1 = vec4(0.0, 0.7, 1.0, 10000.0);
+            if (texelFetch(omw_SamplerDepth, uvi + ivec2(-1, 0), 0).r == rawskydepth)
+                c2 = vec4(0.0, 0.7, 1.0, -10000.0);
+            if (texelFetch(omw_SamplerDepth, uvi + ivec2(0, -1), 0).r == rawskydepth)
+                c3 = vec4(0.0, 0.7, 1.0, -10000.0);
+            if (texelFetch(omw_SamplerDepth, uvi + ivec2(0, 1), 0).r == rawskydepth)
+                c4 = vec4(0.0, 0.7, 1.0, 10000.0);
+            
             c1.b = unpack(c1.b, c1.a);
             c2.b = unpack(c2.b, c2.a);
             c3.b = unpack(c3.b, c3.a);
             c4.b = unpack(c4.b, c4.a);
             
-            float sss1, sss2, sss3, sss4;
-            c1.r = unpack(c1.r, sss1);
-            c2.r = unpack(c2.r, sss2);
-            c3.r = unpack(c3.r, sss3);
-            c4.r = unpack(c4.r, sss4);
+            float sss;
+            c1.r = unpack(c1.r, sss);
+            c2.r = unpack(c2.r, sss);
+            c3.r = unpack(c3.r, sss);
+            c4.r = unpack(c4.r, sss);
             
             // EDI
             float da = length(c1 - c3);
@@ -815,20 +1072,119 @@ fragment pre_getPbr(target=RT_PBR2) {
             if (da < db)
             {
                 omw_FragColor = (c1+c3)*0.5;
-                omw_FragColor.a *= 0.999;
-                omw_FragColor.a += round((sss1+sss3)*0.5 * 16.0);
             }
             else
             {
                 omw_FragColor = (c2+c4)*0.5;
-                omw_FragColor.a *= 0.999;
-                omw_FragColor.a += round((sss2+sss4)*0.5 * 16.0);
             }
             //omw_FragColor = (c1+c2+c3+c4)*0.25;
             //omw_FragColor *= 0.0;
         }
         else
+        {
             omw_FragColor = c;
+        }
+        
+        omw_FragColor.g = max(0.005, omw_FragColor.g);
+        omw_FragColor.b = to_linear(omw_FragColor.rgb).b;
+    }
+}
+fragment pre_getPbrExtras(target=RT_PBR_EXTRAS) {
+    omw_In vec2 omw_TexCoord;
+
+    float unpack_2ndg(float a)
+    {
+        int aibi = int(floor(a * 255.0 + 0.5));
+        // sky gives a grey normal so we need this stupid hack
+        int bi = (aibi + 16) % 16;
+        float b = float(bi) / 15.0;
+        return b;
+    }
+    float unpack_2ndr(float a)
+    {
+        int aibi = int(floor(a * 255.0 + 0.5));
+        int bi = (aibi) % 16;
+        float b = float(bi) / 15.0;
+        return b;
+    }
+
+    void main() {
+        if (uDisable) return;
+        vec2 res = omw.resolution;
+        vec2 rres = omw.rcpResolution;
+        ivec2 uvpix = ivec2(omw_TexCoord * res);
+        ivec2 uvi = ivec2(omw_TexCoord * omw.resolution);
+        vec4 c = vec4(texelFetch(omw_SamplerNormals, uvi, 0).xyz, 0.0);
+        float emissive;
+        c.g = unpack_2ndg(c.g);
+        float sss0;
+        c.r = unpack_2ndr(c.r);
+        
+        // r: sss
+        // g: emissive
+        
+        if (uNoCheckerboardPBRInput)
+        {
+            vec3 c = omw_GetLastShader(omw_TexCoord).rgb;
+            float x = c.g;
+            //float x2 = 1.0 - (x+-(x*x*x)*181.0*(1.0-x*2.0)*((x-1.0)*(x-1.0)*(x-1.0)));
+            //float x2 = cos(x*9.0)*0.5+0.5;
+            float x2 = abs(x-0.5)*2.0;
+            float r = mix(0.2, 0.9, clamp(x2, 0.0, 1.0));
+            float bright = dot(c, vec3(1.0/3.0));
+            vec3 grey = vec3(bright);
+            float sat = length(c - grey)/(bright+0.01);
+            float m = mix(1.0, 0.0, clamp(sat*4.0, 0.0, 1.0));
+            m -= 1.0 - clamp((bright-0.2)*4.0 + 0.2, 0.0, 1.0);
+            m = clamp((m-0.5)*4.0+0.5, 0.0, 1.0);
+            omw_FragColor = vec4(m, r, 1.0, 0.999);
+            return;
+        }
+        
+        if (((uvpix.x + uvpix.y) % 2) == 0)
+        {
+            vec4 c1 = vec4(texelFetch(omw_SamplerNormals, uvi + ivec2(1, 0), 0).xyz, 0.0);
+            vec4 c2 = vec4(texelFetch(omw_SamplerNormals, uvi + ivec2(-1, 0), 0).xyz, 0.0);
+            vec4 c3 = vec4(texelFetch(omw_SamplerNormals, uvi + ivec2(0, -1), 0).xyz, 0.0);
+            vec4 c4 = vec4(texelFetch(omw_SamplerNormals, uvi + ivec2(0, 1), 0).xyz, 0.0);
+            
+            if (texelFetch(omw_SamplerDepth, uvi + ivec2(1, 0), 0).r == rawskydepth)
+                c1 = vec4(0.0, 0.0, 0.0, 10000.0);
+            if (texelFetch(omw_SamplerDepth, uvi + ivec2(-1, 0), 0).r == rawskydepth)
+                c2 = vec4(0.0, 0.0, 0.0, -10000.0);
+            if (texelFetch(omw_SamplerDepth, uvi + ivec2(0, -1), 0).r == rawskydepth)
+                c3 = vec4(0.0, 0.0, 0.0, -10000.0);
+            if (texelFetch(omw_SamplerDepth, uvi + ivec2(0, 1), 0).r == rawskydepth)
+                c4 = vec4(0.0, 0.0, 0.0, 10000.0);
+            
+            c1.g = unpack_2ndg(c1.g);
+            c2.g = unpack_2ndg(c2.g);
+            c3.g = unpack_2ndg(c3.g);
+            c4.g = unpack_2ndg(c4.g);
+            
+            c1.r = unpack_2ndr(c1.r);
+            c2.r = unpack_2ndr(c2.r);
+            c3.r = unpack_2ndr(c3.r);
+            c4.r = unpack_2ndr(c4.r);
+            
+            // EDI
+            float da = length(c1 - c3);
+            float db = length(c2 - c4);
+            if (da < db)
+            {
+                omw_FragColor = (c1+c3)*0.5;
+            }
+            else
+            {
+                omw_FragColor = (c2+c4)*0.5;
+            }
+            //omw_FragColor = (c1+c2+c3+c4)*0.25;
+            //omw_FragColor *= 0.0;
+        }
+        else
+        {
+            omw_FragColor = c;
+        }
     }
 }
 
@@ -849,13 +1205,13 @@ fragment pre_ssao(rt2=RT_Norm, target=RT_SSAO) {
             vec3 wpos = omw_GetWorldPosFromUV(omw_TexCoord);
             float d = omw_GetLinearDepth(omw_TexCoord);
             float samp = 0.0;
-            float sampn = 0.01;
+            float sampn = 0.0;
             float viewmodelDistGuess = 50.0;
             for (int i = 0; i < 8 && d > viewmodelDistGuess; i++)
             {
-                float r1 = dither(omw_TexCoord * omw.resolution + float(i)*155.0);
-                float r2 = dither(omw_TexCoord * omw.resolution + float(i)*155.0 + vec2(0.0, 111.0));
-                float r3 = dither(omw_TexCoord * omw.resolution + float(i)*155.0 + vec2(222.45, 0.0));
+                float r1 = hashb(omw_TexCoord * omw.resolution + float(i)*vec2(11.0, 7.0));
+                float r2 = hashb(omw_TexCoord * omw.resolution + float(i)*vec2(11.0, 7.0) + vec2(3.0, 13.0));
+                float r3 = hashb(omw_TexCoord * omw.resolution + float(i)*vec2(11.0, 7.0) + vec2(19.0, 9.0));
                 r2 = r2*2.0-1.0;
                 r2 = r2 * r2 * r2;
                 r3 = r3*2.0-1.0;
@@ -863,7 +1219,7 @@ fragment pre_ssao(rt2=RT_Norm, target=RT_SSAO) {
                 vec3 dp = vec3(r1 + 0.2, r2, r3);
                 //dp -= n;
                 dp = tbn * dp;
-                dp *= 80.0; // sample cast distance
+                dp *= 120.0; // sample cast distance
                 vec4 coord = omw.projectionMatrix * (omw.viewMatrix * vec4(wpos + dp, 1.0));
                 coord.xyz /= coord.w;
                 coord.z = d_to_linear(coord.z);
@@ -875,8 +1231,9 @@ fragment pre_ssao(rt2=RT_Norm, target=RT_SSAO) {
                     samp += weight;
                 sampn += weight;
             }
-            samp /= sampn;
+            samp /= max(sampn, 0.001);
             samp = mix(samp, 1.0, clamp(d*0.01-100.0, 0.0, 1.0));
+            samp *= samp;
             samp = clamp(samp * 1.2, 0.0, 1.0);
             if (d > viewmodelDistGuess)
                 c.b *= samp;
@@ -896,7 +1253,7 @@ fragment pre_ssao_apply(rt1=RT_PBR2, rt2=RT_SSAO, target=RT_PBR) {
     }
 }
 
-fragment shade(rt1=RT_Norm, rt2=RT_PBR, rt3=RT_OutMicroMemory, target=RT_PongOut1) {
+fragment shade(rt1=RT_Norm, rt2=RT_PBR, rt3=RT_PBR_EXTRAS, target=RT_PongOut1) {
     omw_In vec2 omw_TexCoord;
 
     void perLight(inout vec3 accum, vec3 lcolor, float falloff,
@@ -915,6 +1272,7 @@ fragment shade(rt1=RT_Norm, rt2=RT_PBR, rt3=RT_OutMicroMemory, target=RT_PongOut
         vec3 hdir = normalize(vdir + ldir);
         
         vec3 f0 = vec3(0.04);
+        //vec3 f0 = vec3(0.035 - 0.015*basecolor.r + 0.015*basecolor.g);
         vec3 diffuseAlbedo = basecolor;
         if (metallicity != 0.0)
         {
@@ -923,7 +1281,9 @@ fragment shade(rt1=RT_Norm, rt2=RT_PBR, rt3=RT_OutMicroMemory, target=RT_PongOut
         }
         
         float dotHV = dot(hdir, vdir);
-        vec3 fresnel = fresnelSchlick(max(0.0, dotHV), f0, vec3(1.0));
+        float bad_dotHV = mix(dotHV, 1.0-(1.0-dotHV)*(1.0-dotHV), roughness);
+        vec3 fresnel = fresnelSchlick(bad_dotHV, f0, vec3(1.0));
+        //fresnel = vec3(0.0);
         
         float insolation = max(0.0, dot(ldir, n));
         
@@ -943,21 +1303,14 @@ fragment shade(rt1=RT_Norm, rt2=RT_PBR, rt3=RT_OutMicroMemory, target=RT_PongOut
         if (insolation == 0.0)
             return;
         
-        vec3 diffuseL;
-        if (uLazyDiffuse3)
-            diffuseL = max(vec3(0.0), LazyDiffuse3(ldir, n, vdir, insolation, roughness));
-        else if (uLazyDiffuse2)
-            diffuseL = max(vec3(0.0), LazyDiffuse2(ldir, n, vdir, insolation, roughness));
-        else if (uLazyDiffuse)
-            diffuseL = max(vec3(0.0), LazyDiffuse(ldir, n, vdir, insolation, roughness));
-        else if (uHammonDiffuse)
-            diffuseL = max(vec3(0.0), HammonDiffuse(diffuseAlbedo, ldir, n, vdir, insolation, roughness));
-        else if (uFujiOrenNayar)
-            diffuseL = vec3(max(0.0, FujiOrenNayar(ldir, n, vdir, insolation, roughness)));
-        else
-            diffuseL = vec3(insolation); // lambert
         vec3 specularL = vec3(BRDF(n, vdir, ldir, hdir, roughness));
         
+        // lazy multiscatter approximation
+        float dotnv = max(0.0, dot(vdir, n));
+        specularL *= 1.0 +
+            roughness * roughness * 2.3 * (dotnv*0.94 + 0.06)
+            * mix(basecolor*basecolor*0.93+0.07, basecolor, metallicity);
+
         if (uSpecularAoHack)
         {
             float ao_closedness = 1.0 - ao*ao; // 1 for darker crevices
@@ -976,8 +1329,32 @@ fragment shade(rt1=RT_Norm, rt2=RT_PBR, rt3=RT_OutMicroMemory, target=RT_PongOut
             specularL *= specularMask;
         }
         
+        vec3 diffuseL;
+        if (uLazyDiffuse3)
+            diffuseL = max(vec3(0.0), LazyDiffuse3(ldir, n, vdir, insolation, roughness));
+        else if (uLazyDiffuse2)
+            diffuseL = max(vec3(0.0), LazyDiffuse2(ldir, n, vdir, insolation, roughness));
+        else if (uLazyDiffuse)
+            diffuseL = max(vec3(0.0), LazyDiffuse(ldir, n, vdir, insolation, roughness));
+        else if (uHammonDiffuse)
+            diffuseL = max(vec3(0.0), HammonDiffuse(diffuseAlbedo, ldir, n, vdir, insolation, roughness));
+        else if (uFujiOrenNayar)
+            diffuseL = vec3(max(0.0, FujiOrenNayar(ldir, n, vdir, insolation, roughness)));
+        else
+            diffuseL = vec3(insolation); // lambert
+        
+        // We brighten the abledo by a factor of X and then darken the final result by a factor of X.
+        // We do this because non-PBR albedo textures almost always have too-dark abledo textures, leading to
+        //   specular highlight blowout and a painted-with-milk look.
+        // The net effect is to darken specularity by a factor of X, but doing it this way makes the intent clearer.
+        if (!uTrueAccurateSpecularBrightness)
+        {
+            diffuseL *= 2.0;
+            lcolor *= 0.5;
+        }
+        
         diffuseL *= 1.0 - fresnel;
-        specularL *= fresnel * insolation;
+        specularL *= fresnel * insolation * PI; // Multiplying by PI here is strictly correct.
         
         accum += (diffuseL * diffuseAlbedo + specularL) * lcolor * falloff;
     }
@@ -993,8 +1370,8 @@ fragment shade(rt1=RT_Norm, rt2=RT_PBR, rt3=RT_OutMicroMemory, target=RT_PongOut
         vec4 _n = omw_Texture2D(RT_Norm, omw_TexCoord);
         vec3 n = _n.xyz;
         n = normalize(n);
-        float e = clamp(_n.a - 0.05, 0.0, 1.0);
         vec4 pbr = omw_Texture2D(RT_PBR, omw_TexCoord);
+        vec4 pbrex = omw_Texture2D(RT_PBR_EXTRAS, omw_TexCoord);
         
         vec3 wpos = omw_GetWorldPosFromUV(omw_TexCoord);
         vec3 eyepos = omw.eyePos.xyz;
@@ -1008,21 +1385,25 @@ fragment shade(rt1=RT_Norm, rt2=RT_PBR, rt3=RT_OutMicroMemory, target=RT_PongOut
         float metallicity = pbr.r;
         float roughness = pbr.g;
         float ao = pbr.b;
-        float shadow = fract(pbr.a);
-        float sss = 1.0 - (floor((pbr.a - shadow)) * (1.0/16.0));
+        float shadow = pbr.a;
+        float sss = pbrex.r;
+        float emiss = pbrex.g;
         
         vec3 accum = vec3(0.0);
         
-        accum += e * c;
+        accum += to_linear(vec3(emiss)).r * c;
         
-        accum += perAmbient(wpos, c, to_linear(omw.ambientColor.rgb), vdir, n, ao, metallicity, roughness, false, RT_OutMicroMemory);
+        accum += perAmbient(wpos, c, to_linear(omw.ambientColor.rgb), vdir, n, ao, metallicity, roughness, false, RT_PBR);
         
         float c_shadowing = 1.0;
         if (uContactShadow)
         {
-            float udf = clamp(d*0.0001, 0.0, 1.0);
+            float udf = clamp(d*0.0001*uSunContactShadowDistanceFactor1, 0.0, 1.0);
             udf *= udf;
             float ud = mix(0.25 * d, 0.4 * d, udf);
+            ud *= uSunContactShadowDistanceFactor2;
+            if (uNoCheckerboardPBRInput)
+                ud = mix(0.9 * d, 0.9 * d, udf);
             
             vec4 s1 = omw.projectionMatrix * (omw.viewMatrix * vec4(wpos - omw.sunVec.xyz * ud, 1.0));
             s1.xyz /= s1.w;
@@ -1032,7 +1413,7 @@ fragment shade(rt1=RT_Norm, rt2=RT_PBR, rt3=RT_OutMicroMemory, target=RT_PongOut
             s2.z = 1.0 / omw_GetLinearDepth(omw_TexCoord);
             
             float c_accuracy = 16.0;
-            float jstart = 1.0 - dither(omw_TexCoord * omw.resolution) * 0.7;
+            float jstart = 1.0 - hashb(omw_TexCoord * omw.resolution) * 0.7;
             
             float thickness = uContactShadowThickness;
             thickness = max(thickness, ud * 0.1);
@@ -1049,7 +1430,12 @@ fragment shade(rt1=RT_Norm, rt2=RT_PBR, rt3=RT_OutMicroMemory, target=RT_PongOut
                 if (comp + d*4e-3 < dist
                     && comp + d*4e-3 > dist - thickness
                 )
-                    { c_shadowing = t; break; }
+                {
+                    c_shadowing = t; 
+                    if (uNoCheckerboardPBRInput)
+                        c_shadowing = 0.0;
+                    break;
+                }
             }
             c_shadowing *= c_shadowing;
         }
@@ -1073,12 +1459,12 @@ fragment shade(rt1=RT_Norm, rt2=RT_PBR, rt3=RT_OutMicroMemory, target=RT_PongOut
             
             float radius = omw_GetPointLightRadius(i);
             float dist = length(lpos - wpos);
-            if (dist > radius) continue;
+            //if (dist > radius) continue;
             
             vec3 dir = (lpos - wpos)/dist;
             
             float falloff = 1.0 / ((dist) * atten.g);
-            falloff *= falloff;
+            if (!uNoPBR) falloff *= falloff;
             // kill negative lights
             falloff = max(falloff, 0.0);
             // clamp off weird bits of overbrightness that are probably caused by numerical instability or badly placed lights
@@ -1089,16 +1475,22 @@ fragment shade(rt1=RT_Norm, rt2=RT_PBR, rt3=RT_OutMicroMemory, target=RT_PongOut
             s1.xyz /= s1.w;
             s1.z = 1.0 / d_to_linear(s1.z);
             
+            vec4 s1x = omw.projectionMatrix * (omw.viewMatrix * vec4(lpos, 1.0));
+            s1x.xyz /= s1x.w;
+            s1x.z = 1.0 / d_to_linear(s1x.z);
+            
             vec4 s2 = vec4(omw_TexCoord * 2.0 - 1.0, 0.0, 0.0);
             s2.z = 1.0 / omw_GetLinearDepth(omw_TexCoord);
             
             float p_shadowing = 1.0;
             float p_accuracy = 16.0;
-            float jstart = 1.0 - dither(omw_TexCoord * omw.resolution) * 0.7;
+            float jstart = 1.0 - hashb(omw_TexCoord * omw.resolution) * 0.7;
             for (float j = jstart;
                 j <= p_accuracy &&
                 uContactShadow &&
-                s1.z > 0.0;
+                s1.z > 0.0 &&
+                dist < radius
+                ;
                 j++)
             {
                 float t = j / p_accuracy;
@@ -1112,14 +1504,33 @@ fragment shade(rt1=RT_Norm, rt2=RT_PBR, rt3=RT_OutMicroMemory, target=RT_PongOut
                     && comp + d*4e-3 > depth - uContactShadowThickness
                     //&& t * dist > uContactShadowThickness * 10.0
                     //&& dist < uContactShadowThickness * 0.2
-                    && dist * (1.0 - t) > uContactShadowThickness * 1.3
+                    && dist * (1.0 - t) > uContactShadowThickness * 1.1
                     //&& t * 1.0 / abs(s1.z - s2.z) < uContactShadowThickness * 10.0
                 )
                     { p_shadowing = t; break; }
             }
             p_shadowing *= p_shadowing;
             
-            perLight(accum, color, falloff * p_shadowing * lightFactor(), dir, vdir, n, metallicity, roughness, ao, sss, c);
+            if (dist < radius)
+                perLight(accum, color, falloff * p_shadowing * lightFactor(), dir, vdir, n, metallicity, roughness, ao, sss, c);
+            
+            if (uPointLightGlow && s1x.z > 0.0)
+            {
+                vec2 dv = s1x.xy - s2.xy;
+                dv.x *= omw.resolution.x / omw.resolution.y;
+                float d = dot(dv, dv) * 10.0;
+                d *= 1.0/s1x.z * 0.01;
+                d *= 1.0/s1x.z * 0.01;
+                d += 0.2;
+                d = (1.0 / (d*d)) * 0.2;
+                if (d > 0.01)
+                {
+                    d *= clamp((1.0/s2.z - 1.0/s1x.z)*0.01, 0.0, 1.0);
+                    //d *= 1.0/s1x.z * 0.0004;
+                    //d *= s1x.z * 1000.0;
+                    accum += d * color * mix(c, vec3(1.0), 0.1);
+                }
+            }
         }
         
         accum = max(vec3(0.0), accum);
@@ -1136,13 +1547,19 @@ fragment shade(rt1=RT_Norm, rt2=RT_PBR, rt3=RT_OutMicroMemory, target=RT_PongOut
         //omw_FragColor.rgb = n * 0.5 + 0.5;
     }
 }
-fragment water(rt1=RT_WNorm, rt2=RT_PongOut1, target=RT_WaterOut) {
+fragment water(rt1=RT_WNorm, rt2=RT_PongOut1, rt3=RT_Fog, target=RT_WaterOut) {
     omw_In vec2 omw_TexCoord;
 
     void main() {
         if (uDisable) return;
         // super basic screen-space reflection water implementation. still buggy.
         vec3 c = omw_Texture2D(RT_PongOut1, omw_TexCoord).rgb;
+        
+        // use bottom left pixel to smuggle memory
+        vec2 _tmp_asgv = (omw_TexCoord * omw.resolution);
+        if (_tmp_asgv.x < 1.9 && _tmp_asgv.y < 1.9)
+            { omw_FragColor.rgb = c; return; }
+        
         float d = omw_GetLinearDepth(omw_TexCoord);
         vec3 eyepos = omw.eyePos.xyz;
         float watera = eyepos.z - omw.waterHeight;
@@ -1156,7 +1573,6 @@ fragment water(rt1=RT_WNorm, rt2=RT_PongOut1, target=RT_WaterOut) {
         }
         if (omw.isWaterEnabled)
         {
-            c = c;
             vec3 n = omw_Texture2D(RT_WNorm, omw_TexCoord).xyz;
             //n = n * 2.0 - 1.0;
             //n = n * 0.5 + 0.5;
@@ -1169,13 +1585,30 @@ fragment water(rt1=RT_WNorm, rt2=RT_PongOut1, target=RT_WaterOut) {
             if (sign(watera) != sign(waterb))
                 c += vec3(0.3,0.4,0.5)*0.1 * to_linear(omw.ambientColor.rgb);
             
-            float water_fraction = 1.0 - (wpos.z - omw.waterHeight) / (wpos.z - eyepos.z);
-            float surface_distance = d * water_fraction;
-            wpos = mix(eyepos, wpos, water_fraction);
-            
             if (sign(watera) != sign(waterb))
             {
                 vec3 eyevec = normalize(wpos - eyepos);
+                
+                float water_fraction = 1.0 - (wpos.z - omw.waterHeight) / (wpos.z - eyepos.z);
+                float surface_distance = d * water_fraction;
+            
+                float underwater_distance = d - surface_distance;
+                vec2 uv_refracted = omw_TexCoord + n.xy*0.2*(1.0 - exp(-underwater_distance*0.005)) * vec2(omw.resolution.y/omw.resolution.x, 1.0);
+                uv_refracted = (floor(uv_refracted * omw.resolution) + 0.5) * omw.rcpResolution;
+                
+                // misrefraction check
+                float d2 = omw_GetLinearDepth(uv_refracted);
+                if (d2 > surface_distance)
+                {
+                    d = d2;
+                    c = omw_Texture2D(RT_PongOut1, uv_refracted).rgb;
+                    underwater_distance = d - surface_distance;
+                }
+                else
+                    uv_refracted = omw_TexCoord;
+                
+                wpos = mix(eyepos, wpos, water_fraction);
+                
                 vec3 refl = reflect(eyevec, n);
                 
                 // fallback color
@@ -1183,7 +1616,14 @@ fragment water(rt1=RT_WNorm, rt2=RT_PongOut1, target=RT_WaterOut) {
                 upz *= upz;
                 vec3 skyboxEstimate = mix(omw.skyColor.rgb, omw.fogColor.rgb, upz);
                 vec3 hdir = normalize(eyevec - refl);
-                float fresnel = 1.0 - fresnelFactorSchlick(abs(dot(hdir, eyevec)));
+                float fresnel = mix(0.04, 1.0, fresnelFactorSchlick(max(0.0,dot(hdir, eyevec))));
+                
+                // force horizon to be more frenel-ish to hide bad fog
+                //fresnel = clamp(fresnel*2.0, 0.0, 1.0);
+                
+                // diffuse <-> specular inversion
+                fresnel = 1.0 - fresnel;
+                
                 if (view_underwater)
                 {
                     fresnel *= fresnel;
@@ -1194,7 +1634,7 @@ fragment water(rt1=RT_WNorm, rt2=RT_PongOut1, target=RT_WaterOut) {
                 skyboxEstimate = to_linear(skyboxEstimate);
                 
                 vec2 uv;
-                vec4 reflcolor = doRaymarch(wpos, refl, RT_PongOut1, false, 0.0, uv);
+                vec4 reflcolor = doRaymarch(wpos, n, refl, RT_PongOut1, false, 0.0, uv);
                 
                 if (waterb > 0.0) // (starting under water, seeing above water, looking at reflection of underwater stuff)
                     reflcolor *= 0.5; // wet things are usually darker :^)
@@ -1202,7 +1642,7 @@ fragment water(rt1=RT_WNorm, rt2=RT_PongOut1, target=RT_WaterOut) {
                 // reflected fog color hack
                 if (reflcolor.a > 0.0)
                 {
-                    float fv1 = 1.0 - EstimateFogCoverageFromUV2(omw_TexCoord, surface_distance);
+                    float fv1 = 1.0 - EstimateFogCoverageFromUV2(uv_refracted, surface_distance);
                     float d2f = omw_GetLinearDepth(uv);
                     if (d2f != omw.far)
                     {
@@ -1215,7 +1655,22 @@ fragment water(rt1=RT_WNorm, rt2=RT_PongOut1, target=RT_WaterOut) {
                 
                 reflcolor.rgb = mix(skyboxEstimate, reflcolor.rgb, max(0.0, reflcolor.a));
                 
+                vec3 scolor = to_linear(omw.sunColor.rgb);
+                float svis = omw.sunColor.a;
                 
+                // underwater fog
+                vec4 f_a = get_fog(uv_refracted, d, RT_Fog);
+                c = omw_Texture2D(RT_PongOut1, uv_refracted).rgb;
+                //fresnel = 1.0;
+                float far_factor = 1.0 - abs(normalize(eyevec).z);
+                far_factor *= far_factor;
+                far_factor *= far_factor;
+                if (!view_underwater)
+                    c = mix(c, vec3(0.3,0.8,1.0)*0.07*f_a.rgb, max(f_a.a, 1.0 - exp(-underwater_distance*0.002)));
+                else
+                    c = mix(c, vec3(1.0)*scolor, d==omw.far ? far_factor : (1.0 - exp(-underwater_distance*0.00005)));
+                
+                //fresnel = 0.0;
                 omw_FragColor.rgb = mix(c, reflcolor.rgb, 1.0 - fresnel);
                 omw_FragColor.rgb = omw_FragColor.rgb;
                 //omw_FragColor.rgb = vec3(float(int(hit)));
@@ -1229,11 +1684,29 @@ fragment water(rt1=RT_WNorm, rt2=RT_PongOut1, target=RT_WaterOut) {
     }
 }
 
-fragment afterWater(rt1=RT_WaterOut, target=RT_OutMicroMemory) {
+fragment memUpdate(rt1=RT_WaterOut, target=RT_OutMicroMemory0) {
     omw_In vec2 omw_TexCoord;
     void main() {
         if (uDisable) return;
-        vec3 c = texture2D(RT_WaterOut, omw_TexCoord).rgb;
+        vec3 c = omw_Texture2D(RT_WaterOut, omw_TexCoord).rgb;
+        omw_FragColor.rgb = c;
+        return;
+    }
+}
+fragment memUpdate2(rt1=RT_OutMicroMemory0, target=RT_OutMicroMemory) {
+    omw_In vec2 omw_TexCoord;
+    void main() {
+        if (uDisable) return;
+        vec3 c = omw_Texture2D(RT_OutMicroMemory0, omw_TexCoord).rgb;
+        omw_FragColor.rgb = c;
+        return;
+    }
+}
+fragment oopsSpewHack(rt1=RT_OutMicroMemory) {
+    omw_In vec2 omw_TexCoord;
+    void main() {
+        if (uDisable) return;
+        vec3 c = omw_Texture2D(RT_OutMicroMemory, omw_TexCoord).rgb;
         omw_FragColor.rgb = c;
         return;
     }
@@ -1252,7 +1725,7 @@ fragment metal(rt1=RT_Norm, rt2=RT_PBR, rt3=RT_WaterOut, target=RT_PongOut1) {
         n = normalize(n);
         vec3 refl = reflect(eyevec, n);
         vec2 _uv = omw_TexCoord;
-        vec4 reflcolor = doRaymarch(wpos, refl, RT_WaterOut, false, 0.0, _uv);
+        vec4 reflcolor = doRaymarch(wpos, n, refl, RT_WaterOut, false, 0.0, _uv);
         
         float d = omw_GetLinearDepth(omw_TexCoord);
         vec3 vdir = normalize(wpos - eyepos);
@@ -1294,7 +1767,7 @@ fragment metal(rt1=RT_Norm, rt2=RT_PBR, rt3=RT_WaterOut, target=RT_PongOut1) {
     }
 }
 
-fragment applyFog(rt1=RT_PongOut1, target=RT_PongOut2) {
+fragment applyFog(rt1=RT_PongOut1, rt2=RT_Fog, target=RT_PongOut2) {
     omw_In vec2 omw_TexCoord;
 
     void main() {
@@ -1305,25 +1778,31 @@ fragment applyFog(rt1=RT_PongOut1, target=RT_PongOut2) {
         vec3 wpos = omw_GetWorldPosFromUV(omw_TexCoord);
         vec3 eyepos = omw.eyePos.xyz;
         
-        float upz = 1.0 - max(0.0, normalize(wpos - eyepos).z);
-        upz *= upz;
-        upz = mix(upz, 1.0, 0.5);
-        vec3 skyboxEstimate = mix(omw.skyColor.rgb, omw.fogColor.rgb, upz);
-        skyboxEstimate = to_linear(skyboxEstimate);
+        float d = omw_GetLinearDepth(omw_TexCoord);
+        
+        vec4 fogsamp = get_fog(omw_TexCoord, d, RT_Fog);//omw_Texture2D(RT_Fog, omw_TexCoord);
+        vec3 skyboxEstimate = fogsamp.rgb;
+        float fogCoverage = fogsamp.a;
         
         float watera = eyepos.z - omw.waterHeight;
         
-        float d = omw_GetLinearDepth(omw_TexCoord);
         if (omw.isWaterEnabled)
         {
             float waterb = wpos.z - omw.waterHeight;
             
+            // FIXME: do this hack properly. to do it properly, we have to apply fog to other-side-of-water stuff in the water pass,
+            //   not use `&& issky` here.
+            
+            bool issky = omw_Texture2D(omw_SamplerDepth, omw_TexCoord).r == rawskydepth;
             if (sign(watera) != sign(waterb))
             {
                 float water_fraction = 1.0 - (wpos.z - omw.waterHeight) / (wpos.z - eyepos.z);
                 float surface_distance = d * water_fraction;
                 
-                float fogCoverage = EstimateFogCoverageFromUV2(omw_TexCoord, surface_distance);
+                vec4 fogsamp = get_fog(omw_TexCoord, surface_distance, RT_Fog);
+                vec3 skyboxEstimate = fogsamp.rgb;
+                float fogCoverage = fogsamp.a;
+                
                 omw_FragColor.rgb = mix(omw_FragColor.rgb, skyboxEstimate, fogCoverage);
                 return;
             }
@@ -1331,16 +1810,10 @@ fragment applyFog(rt1=RT_PongOut1, target=RT_PongOut2) {
         
         if (d == omw.far && watera > 0.0)
         {
-            #if (OMW_REVERSE_Z == 1)
-            float rawskydepth = 0.0;
-            #else
-            float rawskydepth = 1.0;
-            #endif
             if (omw_Texture2D(omw_SamplerDepth, omw_TexCoord).r == rawskydepth)
                 return;
         }
         
-        float fogCoverage = EstimateFogCoverageFromUV2(omw_TexCoord, d);
         omw_FragColor.rgb = mix(omw_FragColor.rgb, skyboxEstimate, fogCoverage);
     }
 }
@@ -1364,13 +1837,9 @@ fragment bloom1(rt1=RT_Bloom0, target=RT_Bloom1) {
         float norm = 0.0;
         for (float n = -3.5; n <= 3.5; n += 1.0)
         {
-            //float w = exp(-(n*n)*0.2); // gaussian, but...
-            float w = 1.0 - abs(n * 0.25); // a triangle blur is close enough
+            float w = exp(-(n*n)*0.2); // gaussian blur
             norm += w;
             vec3 sample = omw_Texture2D(RT_Bloom0, omw_TexCoord + vec2(n, 0.0) * px * 8.0 * 1.0).rgb;
-            //sample = sample / sqrt(max(vec3(0.0), sample) + 1.0);
-            //sample = sample / sqrt(max(vec3(0.0), sample) + 4.0) * 2.0;
-            //sample = min(vec3(4.0), sample);
             c += w * sample;
         }
         c /= norm;
@@ -1388,8 +1857,7 @@ fragment bloom2(rt1=RT_Bloom1, target=RT_Bloom2) {
         float norm = 0.0;
         for (float n = -3.5; n <= 3.5; n += 1.0)
         {
-            //float w = exp(-(n*n)*0.2); // gaussian, but...
-            float w = 1.0 - abs(n * 0.25); // a triangle blur is close enough
+            float w = exp(-(n*n)*0.2); // gaussian blur
             norm += w;
             c += w * omw_Texture2D(RT_Bloom1, omw_TexCoord + vec2(0.0, n) * px * 8.0 * 1.0).rgb;
         }
@@ -1406,7 +1874,13 @@ fragment bloomdone(rt1=RT_PongOut2, rt2=RT_Bloom1, rt3=RT_Bloom2, target=RT_Pong
         vec3 c = omw_Texture2D(RT_PongOut2, omw_TexCoord).rgb;
         if (uBloom)
         {
-            vec3 c2 = omw_Texture2D(RT_Bloom2, omw_TexCoord).rgb;
+            vec2 px = omw.rcpResolution * 8.0 * 0.25;
+            vec3 c2 = vec3(0.0);
+            c2 += omw_Texture2D(RT_Bloom2, omw_TexCoord + px * vec2(-1.0, -1.0)).rgb;
+            c2 += omw_Texture2D(RT_Bloom2, omw_TexCoord + px * vec2(-1.0,  1.0)).rgb;
+            c2 += omw_Texture2D(RT_Bloom2, omw_TexCoord + px * vec2( 1.0, -1.0)).rgb;
+            c2 += omw_Texture2D(RT_Bloom2, omw_TexCoord + px * vec2( 1.0,  1.0)).rgb;
+            c2 *= 0.25;
             c = c * 0.95 + c2 * 0.07;
         }
         omw_FragColor.rgb = c;
@@ -1418,9 +1892,10 @@ fragment exposureTrack(rt1=RT_OutMicroMemory, rt2=RT_ExpTrack1, target=RT_ExpTra
     void main() {
         vec4 c1 = omw_Texture2D(RT_OutMicroMemory, omw_TexCoord);
         c1.rgb = to_srgb(c1.rgb);
+        c1.rgb = sqrt(c1.rgb);
         vec4 c2 = omw_Texture2D(RT_ExpTrack1, omw_TexCoord) + 0.2;
         // unfortunately, this lerp is unstable at extremely low delta times, so we have to enforce a minimum delta time
-        float f = 1.0 - exp(-2.0 * max(0.002, omw.deltaSimulationTime));
+        float f = 1.0 - exp(-2.0 * max(0.005, omw.deltaSimulationTime));
         omw_FragColor = mix(c2, c1, f);
     }
 }
@@ -1501,28 +1976,220 @@ fragment exposure(rt1=RT_PongOut1, rt2=RT_ExpTrack1) {
     }
 }
 
-fragment cfDebug(rt1=RT_Bloom2) {
+fragment fog_prepass(target=RT_Fog2) {
+    omw_In vec2 omw_TexCoord;
+    
+    float hash(float x)
+    {
+        //x = fract(x*0.0001)/0.0001;
+        //x = round(x*1000.0);
+        //x += sin(x);
+        return fract(sin(x)*1000.1451);
+    }
+    
+    float valnoise(vec2 w)
+    {
+        return textureLod(tx_perlinnoise, w*0.1, 0.0).r;
+        
+        // slow and dumb lol
+        vec2 w1 = floor(w);
+        vec2 w2 = w1 + vec2(1.0, 0.0);
+        vec2 w3 = w1 + vec2(0.0, 1.0);
+        
+        float v1 = hash(w1.x + w1.y*3.31415);
+        float v2 = hash(w2.x + w1.y*3.31415);
+        float v3 = hash(w1.x + w3.y*3.31415);
+        float v4 = hash(w2.x + w3.y*3.31415);
+        
+        float tx = w.x - w1.x;
+        float ty = w.y - w1.y;
+        tx = smoothstep(0.0, 1.0, tx);
+        ty = smoothstep(0.0, 1.0, ty);
+        
+        float o1 = mix(v1, v2, tx);
+        float o2 = mix(v3, v4, tx);
+        
+        return mix(o1, o2, ty);
+    }
+    
+    float valnoise3(vec3 w)
+    {
+        w.z *= 8.0;
+        vec2 wmz = w.xy + vec2(4.15151, 3.75151)*floor(w.z);
+        float v = valnoise(wmz);
+        float v2 = valnoise(wmz + vec2(4.15151, 3.75151));
+        float t = w.z - floor(w.z);
+        t = smoothstep(0.0, 1.0, t);
+        
+        return mix(v, v2, t);
+    }
+
+    float valnoise3f(vec3 w, float time, float step)
+    {
+        w += vec3(335.0);
+        w *= 0.15;
+        //time /= round((1.0/PI));
+        time *= PI * 2.0;
+        vec3 timevec = vec3(sin(time), cos(time), 0.0) * 20.0;
+        
+        float n = valnoise3(w * 0.2 + timevec);
+        n += valnoise3((w + 0.5*timevec) * 1.2);
+        n += valnoise3((w + 0.35*timevec) * 4.7);
+        n += valnoise3((w - 0.25*timevec) * 8.7) * 0.5;
+        n += valnoise3((w - 0.1*timevec) * 16.7) * 0.5;
+        n += valnoise3((w + 0.15*timevec) * 32.7) * 0.5;
+        n += valnoise3((w + 0.2*timevec) * 32.7) * 0.5;
+        n = n / 5.0;
+        n = clamp((n - 0.5) * 3.5 + 0.5, 0.0, 1.0);
+        return n;
+    }
+
+
+    void main() {
+        if (uDisable || !uVoluFog) return;
+        
+        vec2 uv = omw_TexCoord;
+        if (uVoluFogLowres)
+        {
+            uv *= 2.0;
+            if (uv.x > 1.0 || uv.y > 1.0) return;
+        }
+        
+        vec3 wpos = omw_GetWorldPosFromUV(uv);
+        vec3 eyepos = omw.eyePos.xyz;
+        
+        float upz = 1.0 - max(0.0, normalize(wpos - eyepos).z);
+        upz *= upz;
+        upz = mix(upz, 1.0, 0.5);
+        vec3 skyboxEstimate = mix(omw.skyColor.rgb, omw.fogColor.rgb, upz);
+        skyboxEstimate = to_linear(skyboxEstimate);
+
+        float d = omw_GetLinearDepth(uv);
+        float fogCoverage = EstimateFogCoverageFromUV2(uv, d);
+        
+        float ofc = fogCoverage;
+        
+        fogCoverage = 1.0 - fogCoverage;
+        
+        if (omw_Texture2D(omw_SamplerDepth, uv).r == rawskydepth)
+            fogCoverage = 1.0;
+        
+        if (uVoluFog && fogCoverage > 0.05 && fogCoverage < 0.999)
+        {
+            float res = 1.0/16.1;
+            float rp = d*res;
+            float fstart = hashb(uv*omw.resolution)*rp;
+            float lastf = fstart/d;
+            for (float _f = fstart; _f < d; _f += rp)
+            {
+                float f = _f/d;
+                f = mix(f, f*f, 0.65);
+                //f = 1.0 - f;
+                float freq = 1428.0;
+                vec3 c = mix(wpos, eyepos, f);
+                float t = fract(omw.simulationTime / freq);
+                float power = d * 0.02 * res * 0.01;
+                power *= 1.0 / max(0.5, c.z*0.002 - 3.0);
+                power = clamp(power, 0.0, 0.25);
+                
+                float n = valnoise3f(c / freq, t, f - lastf);
+                lastf = f;
+                n *= n;
+                n *= n;
+                n *= power;
+                
+                if (n > 0.01)
+                {
+                    for (int i = 0; i < omw_GetPointLightCount(); i++)
+                    {
+                        vec3 lpos = omw_GetPointLightWorldPos(i);
+                        float radius = omw_GetPointLightRadius(i);
+                        float dist = dot(lpos - c, lpos - c);
+                        dist *= 0.25;
+                        if (dist > radius*radius) continue;
+                        dist = sqrt(dist);
+                        
+                        vec3 dir = (lpos - c)/dist;
+                        
+                        vec3 atten = omw_GetPointLightAttenuation(i);
+                        float falloff = 1.0 / ((dist) * atten.g);
+                        if (!uNoPBR) falloff *= falloff;
+                        falloff = max(falloff, 0.0);
+                        falloff = min(falloff, 200.0);
+                        
+                        vec3 color = to_linear(omw_GetPointLightDiffuse(i));
+                        skyboxEstimate = mix(skyboxEstimate, skyboxEstimate + color * (1.0 - f*f), falloff*n);
+                    }
+                }
+                
+                fogCoverage *= 1.0 - n;
+            }
+            float tofc = 1.0 - ofc;
+            if (uVoluFog)
+                fogCoverage = mix(tofc, fogCoverage, clamp(min(ofc*40.0, (1.0-ofc)*40.0), 0.0, 1.0));
+        }
+        
+        fogCoverage = 1.0 - fogCoverage;
+        
+        fogCoverage *= min(1.0, ofc*1000.0 - 1.0);
+        
+        fogCoverage = clamp(fogCoverage, 0.0, 1.0);
+        omw_FragColor.rgb = skyboxEstimate;
+        omw_FragColor.a = fogCoverage;
+        
+    }
+}
+
+fragment fog_cleanup(rt1=RT_Fog2, target=RT_Fog) {
+    omw_In vec2 omw_TexCoord;
+
+    void main() {
+        if (uDisable || !uVoluFog) return;
+        
+        vec2 uv = omw_TexCoord;
+        vec2 uv2 = uVoluFogLowres ? uv * 0.5 : uv;
+        vec2 r = omw.rcpResolution;
+        float d = omw_GetLinearDepth(uv);
+        bool issky = omw_Texture2D(omw_SamplerDepth, uv).r == rawskydepth;
+        vec4 c = vec4(0.0);
+        float n = 0.0;
+        float lo = 1.0;
+        float hi = 1.0;
+        if (issky) { lo = 0.0; hi = 0.0; }
+        for (float y = -lo; y <= hi; y += 1.0)
+        {
+            for (float x = -lo; x <= hi; x += 1.0)
+            {
+                float d2 = omw_GetLinearDepth(uv+vec2(x, y)*r);
+                bool issky2 = omw_Texture2D(omw_SamplerDepth, uv+vec2(x, y)*r).r == rawskydepth;
+                //if (d2 > d-2.0)
+                //if (d2 < d+2.0)
+                if (abs(d2 - d) < 10.0 && issky == issky2)
+                {
+                    c += omw_Texture2D(RT_Fog2, uv2+vec2(x, y)*r);
+                    n += 1.0;
+                }
+            }
+        }
+        omw_FragColor = c/n;
+    }
+}
+
+
+fragment cfDebug(rt1=RT_PBR) {
     omw_In vec2 omw_TexCoord;
 
     void main() {
         vec2 uv = omw_TexCoord;
-        //uv = uv * omw.resolution;
-        //uv /= 8.0;
-        //uv = floor(uv) + 0.5;
-        //uv *= 8.0;
-        //uv = uv / omw.resolution;
-        vec3 c = texture2DLod(RT_Bloom2, uv, 0.0).rgb;
-        //c += 0.1;
-        c.rgb = to_srgb(c.rgb);
-        c *= 4.0;
-        omw_FragColor.rgb = c;
+        omw_FragColor.rgb = vec3(omw_Texture2D(RT_PBR, omw_TexCoord).b);
     }
 }
 
 technique {
     passes =
-        pre_getPbr, pre_getNormals, pre_ssao, pre_ssao_apply, pre_getWNormals,
-        shade, water, afterWater, metal, applyFog,
+        fog_prepass, fog_cleanup,
+        pre_getPbr, pre_getPbrExtras, pre_getNormals, pre_ssao, pre_ssao_apply, pre_getWNormals,
+        shade, water, memUpdate, memUpdate2, oopsSpewHack, metal, applyFog, memUpdate, memUpdate2,
         bloom0, bloom1, bloom2, bloomdone,
         exposureTrack, exposureTrackBounce, exposure
     ;
@@ -1532,5 +2199,5 @@ technique {
     pass_normals = true;
     pass_lights = true;
     flags = disable_sunglare;
-    glsl_version = 130;
+    glsl_version = 330;
 }

@@ -16,7 +16,15 @@ uniform vec3 gridSize;
 
 #include "lib/light/lighting_pbr.glsl"
 
-#include "lib/light/clamp.glsl"
+void clampLightingCopyAsdfAsdf(inout vec3 lighting)
+{
+#if @clamp
+    lighting = clamp(lighting, vec3(0.0), vec3(1.0));
+#else
+    lighting = max(lighting, 0.0);
+#endif
+}
+
 
 vec3 doLighting(vec2 screenCoord, vec3 viewPos, inout vec3 viewNormal, float shininess, float shadowing,
     vec4 specularColor, vec3 ambientColor, vec3 emissionColor, vec3 diffuseColor, vec3 albedoColor,
@@ -88,10 +96,10 @@ vec3 doLighting(vec2 screenCoord, vec3 viewPos, inout vec3 viewNormal, float shi
 
         calcPointLighting(light, viewDir, viewPos, viewNormal, shininess, diffuseLight, ambientLight, specularLight);
     }
-
+    
     vec3 lighting = diffuseColor.xyz * diffuseLight + ambientColor * ambientLight + emissionColor;
     vec3 specular = specularColor.xyz * specularLight;
-    clampLighting(lighting);
+    clampLightingCopyAsdfAsdf(lighting);
     
     albedoColor = albedoColor * lighting + specular;
     

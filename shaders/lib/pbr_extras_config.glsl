@@ -12,7 +12,6 @@
 //    use front face culling = true
 
 #define PBR_SELF_SHADOW 1
-
 // set to your shadowmap resolution
 #define PBR_SHADOWMAP_RES (2048.0)
 // set to a number between 1 and 16. values from 2 to 5 are normal, values above 5 are silly. 1 means no filtering.
@@ -29,6 +28,6 @@
 // If you're going to use deferred shading, you probably want this
 //    set to 1 to make some town terrains look less bizarre and plasticky.
 // Otherwise, leave it set to 0.
-#define PBR_EARLY_TERRAIN_VERTCOLOR_AO_HACK 0
+#define PBR_EARLY_TERRAIN_VERTCOLOR_AO_HACK 1
 
 #endif // LIB_PBR_CONFIG_EXTRAS

@@ -26,27 +26,37 @@ centroid varying vec3 shadedLighting;
 centroid varying vec3 shadedSpecular;
 centroid varying vec3 passLighting;
 centroid varying vec3 passSpecular;
+#else
+#include "lib/light/clamp.glsl"
 #endif
 varying vec3 passViewPos;
 varying vec3 passNormal;
 
 uniform vec2 screenRes;
+uniform float near;
 uniform float far;
+
+uniform mat4 texMat0;
+uniform mat4 texMat1;
 
 #include "lib/pbr_extras_config.glsl"
 
-#include "lib/core/fragment.h.glsl" 
+#include "lib/core/fragment.h.glsl"
 
-#include "vertexcolors.glsl"
+#include "lib/material/vertexcolors.glsl"
 #include "shadows_fragment.glsl"
 
 #include "lib/material/parallax.glsl"
 #include "fog.glsl"
 #include "compatibility/normals.glsl"
 
+centroid varying vec4 passColor;
+
 void main()
 {
-    vec2 adjustedUV = (gl_TextureMatrix[0] * vec4(uv, 0.0, 1.0)).xy;
+    Material material = getMaterial();
+
+    vec2 adjustedUV = (texMat0 * vec4(uv, 0.0, 1.0)).xy;
 
 #if @parallax
 #if PBR_POM
@@ -73,14 +83,14 @@ void main()
 #else
     vec4 diffuseTex = texture2D(diffuseMap, adjustedUV);
 #endif // parallax
-    
+
     gl_FragData[0] = vec4(diffuseTex.xyz, 1.0);
 
-    vec4 diffuseColor = getDiffuseColor();
+    vec4 diffuseColor = getDiffuseColor(material, passColor);
     gl_FragData[0].a *= diffuseColor.a;
 
 #if @blendMap
-    vec2 blendMapUV = (gl_TextureMatrix[1] * vec4(uv, 0.0, 1.0)).xy;
+    vec2 blendMapUV = (texMat1 * vec4(uv, 0.0, 1.0)).xy;
     gl_FragData[0].a *= texture2D(blendMap, blendMapUV).a;
 #endif
 
@@ -91,7 +101,6 @@ void main()
     vec4 normalTex = texture2D(normalMap, adjustedUV);
 #endif
     vec3 normal = normalTex.xyz * 2.0 - 1.0;
-    normal = vec3(0.0, 0.0, 1.0);
 #if @reconstructNormalZ
     normal.z = sqrt(1.0 - dot(normal.xy, normal.xy));
 #endif
@@ -108,21 +117,20 @@ void main()
 #endif
     
 #if @parallax && PBR_SELF_SHADOW
-    shadowing = selfShadowApprox(shadowing, normalMap, adjustedUV, normalToViewMatrix);
+    shadowing = selfShadowApprox(shadowing, normalMap, adjustedUV, normalToViewMatrix, normalize(sun.position.xyz));
 #endif
     
-#if !PER_PIXEL_LIGHTING
     vec3 lighting, specular;
+#if !PER_PIXEL_LIGHTING
     lighting = mix(shadedLighting, passLighting, shadowing);
     specular = mix(shadedSpecular, passSpecular, shadowing);
-    gl_FragData[0].xyz = gl_FragData[0].xyz * lighting + specular;
 #else
 #if @specularMap
     float shininess = 128.0; // TODO: make configurable
     vec4 specularColor = vec4(0.0, diffuseTex.a, 1.0, 1.0);
 #else
-    float shininess = gl_FrontMaterial.shininess;
-    vec4 specularColor = getSpecularColor();
+    float shininess = material.shininess;
+    vec4 specularColor = getSpecularColor(material, passColor);
 #endif
 
 #if PBR_EARLY_TERRAIN_VERTCOLOR_AO_HACK
@@ -134,7 +142,7 @@ void main()
 #endif
 
     gl_FragData[0].xyz = doLighting(gl_FragCoord.xy, passViewPos, viewNormal, shininess, shadowing,
-        specularColor, getAmbientColor().xyz, getEmissionColor().xyz, diffuseColor.xyz, gl_FragData[0].xyz,
+        specularColor, getAmbientColor(material, passColor).xyz, getEmissionColor(material, passColor).xyz, diffuseColor.xyz, gl_FragData[0].xyz,
         false,
 #if @specularMap
         true
@@ -142,13 +150,14 @@ void main()
         false
 #endif
         );
+#endif // PPL
+
+    gl_FragData[0] = applyFogAtDist(gl_FragData[0], passViewPos, euclideanDepth, linearDepth, near, far);
+
+#if !@disableNormals
+    // Terrain normals are now additively blended the same way as terrain color is, thus using color's alpha.
+    gl_FragData[1] = vec4(viewNormal * 0.5 + 0.5, gl_FragData[0].a);
 #endif
 
-    gl_FragData[0] = applyFogAtDist(gl_FragData[0], euclideanDepth, linearDepth, far);
-
-#if !@disableNormals && @writeNormals
-    gl_FragData[1].xyz = viewNormal * 0.5 + 0.5;
-#endif
-    
     applyShadowDebugOverlay();
 }

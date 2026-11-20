@@ -13,28 +13,31 @@ attribute vec3 aRotation;
 
 #if @diffuseMap
 varying vec2 diffuseMapUV;
+uniform mat4 texMat@diffuseMapUV;
 #endif
 
 #if @normalMap
 varying vec2 normalMapUV;
+uniform mat4 texMat@normalMapUV;
 #endif
 
 // Other shaders respect forcePPL, but legacy groundcover mods were designed to work with vertex lighting.
 // They may do not look as intended with per-pixel lighting, so ignore this setting for now.
+//#define PER_PIXEL_LIGHTING @normalMap
+// For PBR you always need PPL.
 #define PER_PIXEL_LIGHTING 1
 
 varying float euclideanDepth;
 varying float linearDepth;
 
-#if PER_PIXEL_LIGHTING
-varying vec3 passViewPos;
-#else
+#if !PER_PIXEL_LIGHTING
 centroid varying vec3 shadedLighting;
 centroid varying vec3 passLighting;
 #include "lib/light/clamp.glsl"
 #endif
 
 varying vec3 passNormal;
+varying vec3 passViewPos;
 
 #include "shadows_vertex.glsl"
 #include "compatibility/normals.glsl"
@@ -45,6 +48,8 @@ uniform mat4 osg_ViewMatrixInverse;
 uniform mat4 osg_ViewMatrix;
 uniform float windSpeed;
 uniform vec3 playerPos;
+
+centroid varying vec4 passColor;
 
 #if @groundcoverStompMode == 0
 #else
@@ -123,6 +128,8 @@ mat3 rotation3(in mat4 rot4)
 
 void main(void)
 {
+    Material material = getMaterial();
+
     vec3 position = aOffset.xyz;
     float scale = aOffset.w;
 
@@ -134,7 +141,7 @@ void main(void)
     vec4 worldPos = osg_ViewMatrixInverse * gl_ModelViewMatrix * displacedVertex;
     worldPos.xy += groundcoverDisplacement(worldPos.xyz, gl_Vertex.z);
     vec4 viewPos = osg_ViewMatrix * worldPos;
-
+    passViewPos = viewPos.xyz;
     gl_ClipVertex = viewPos;
     euclideanDepth = length(viewPos.xyz);
 
@@ -156,17 +163,17 @@ void main(void)
 #endif
 
 #if @diffuseMap
-    diffuseMapUV = (gl_TextureMatrix[@diffuseMapUV] * gl_MultiTexCoord@diffuseMapUV).xy;
+    diffuseMapUV = (texMat@diffuseMapUV * gl_MultiTexCoord@diffuseMapUV).xy;
 #endif
 
 #if @normalMap
-    normalMapUV = (gl_TextureMatrix[@normalMapUV] * gl_MultiTexCoord@normalMapUV).xy;
+    normalMapUV = (texMat@normalMapUV * gl_MultiTexCoord@normalMapUV).xy;
 #endif
 
 #if PER_PIXEL_LIGHTING
     passViewPos = viewPos.xyz;
 #else
-    float shininess = max(1e-4, gl_FrontMaterial.shininess);
+    float shininess = max(1e-4, material.shininess);
     vec3 viewDir = viewPos.xyz / euclideanDepth;
 
     vec3 sunDiffuse, sunAmbient, unusedSpecular1, pointDiffuse, pointAmbient, unusedSpecular2;
