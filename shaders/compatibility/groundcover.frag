@@ -1,8 +1,8 @@
 #version 120
 
-#if @useGPUShader4
+//#if @useGPUShader4
     #extension GL_EXT_gpu_shader4: require
-#endif
+//#endif
 
 #include "lib/core/fragment.h.glsl"
 

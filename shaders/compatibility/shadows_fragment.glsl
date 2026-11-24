@@ -4,8 +4,6 @@
 
 uniform float osg_simulationTime;
 
-#extension GL_EXT_gpu_shader4: require
-
 #if SHADOWS
     uniform float maximumShadowMapDistance;
     uniform float shadowFadeStart;
@@ -20,6 +18,48 @@ uniform float osg_simulationTime;
     @endforeach
 #endif // SHADOWS
 
+float getFilteredShadowingLite(sampler2DShadow tex, vec4 coord, vec4 offset, mat4 matrix)
+{
+    
+    vec4 coord_orig = coord;
+    coord += offset;
+    
+    int _FILTER_SIZE = ((PBR_SHADOW_FILTER_SIZE) < 1 ? 1 : (PBR_SHADOW_FILTER_SIZE) > 16 ? 16 : (PBR_SHADOW_FILTER_SIZE));
+    
+    float scale = 1.0 / (PBR_SHADOWMAP_RES) * coord.w;
+    vec4 offsx = vec4(1.0, 0.0, 0.0, 0.0) * scale;
+    vec4 offsy = vec4(0.0, 1.0, 0.0, 0.0) * scale;
+    
+    float amount = 0.0;
+    float norm = 0.0;
+    float ends = (_FILTER_SIZE - 1.0) / 2.0;
+    
+#if PBR_SHADOW_FILTER_LITE_ALIGNED
+    vec3 cdx = normalize(dFdx(coord_orig.xyz).xyz);
+    vec3 cdy = normalize(dFdy(coord_orig.xyz).xyz);
+    vec3 cn = normalize(cross(cdy, cdx));
+    cdy = normalize(cross(cn, cdx));
+    
+    offsx.z = -cn.x/cn.z * scale;
+    offsy.z = -cn.y/cn.z * scale;
+    // unitless bodge motivated by the acne caused by the above
+    // ... which is scale-dependent
+    coord.z -= scale/(-cn.z + 0.1)*0.2;
+#endif
+    
+    for (float y = -ends; y < ends + 0.1; y += 1.0)
+    {
+        for (float x = -ends; x < ends + 0.1; x += 1.0)
+        {
+            vec4 innercoord = coord + offsx*float(x) + offsy*float(y);
+            amount += shadow2DProj(tex, innercoord).r;
+            norm += 1.0;
+        }
+    }
+    amount /= norm;
+    
+    return amount;
+}
 float getFilteredShadowing(sampler2DShadow tex, vec4 coord, vec4 offsx, mat4 matrix)
 {
     /*
@@ -151,16 +191,26 @@ float unshadowedLightRatioOffset(float distance, vec3 coord_offset)
 #endif
             if (all(lessThan(shadowXYZ.xy, vec2(1.0, 1.0))) && all(greaterThan(shadowXYZ.xy, vec2(0.0, 0.0))))
             {
+                #if PBR_SHADOW_FILTER_SIZE != 1
+                #if PBR_SHADOW_FILTER_LITE
+                float amount = getFilteredShadowingLite(
+                    shadowTexture@shadow_texture_unit_index,
+                    shadowSpaceCoords@shadow_texture_unit_index, offs,
+                    shadowSpaceMatrix@shadow_texture_unit_index
+                );
+                #else
                 float amount = getFilteredShadowing(
                     shadowTexture@shadow_texture_unit_index,
                     shadowSpaceCoords@shadow_texture_unit_index, offs,
                     shadowSpaceMatrix@shadow_texture_unit_index
                 );
-                //float amount = shadow2DProj(
-                //    shadowTexture@shadow_texture_unit_index,
-                //    shadowSpaceCoords@shadow_texture_unit_index + offs
-                //).r;
-                //
+                #endif
+                #else
+                float amount = shadow2DProj(
+                    shadowTexture@shadow_texture_unit_index,
+                    shadowSpaceCoords@shadow_texture_unit_index + offs
+                ).r;
+                #endif
                 shadowing = min(amount, shadowing);
 
                 doneShadows = all(lessThan(shadowXYZ, vec3(0.95, 0.95, 0.95))) && all(greaterThan(shadowXYZ, vec3(0.05, 0.05, 0.05)));

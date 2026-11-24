@@ -77,11 +77,13 @@
 
 // use a PBR specular BRDF function inspired by godot's instead of learnopengl's
 // it's meaningfully faster, and is closer to what people will see with PBR in other games
-#define PBR_GODOT_BRDF 1
+#define PBR_GODOT_BRDF 0
 // use a PBR specular BRDF function defined by the GLTF2 spec
 // note: it is SLOW. only provided for debugging.
 // note: PBR_HIGHPERF disables this flag even if this flag is enabled.
 #define PBR_GLTF2_BRDF 0
+// use a height-correlated version of the GLTF2 BRDF
+#define PBR_HC_BRDF 1
 // if the above two are both 0, then a BRDF inspired by learnopengl's PBR series will be used
 
 // interpret vertex color as shadowing instead of diffuse for sun or indoors
@@ -127,9 +129,9 @@
 // note: specularity always uses quadratic falloff
 #define PBR_FALLOFF_REF_DISTANCE 70.0
 // general boost for quadratic falloff
-#define PBR_QUADRATIC_BOOST 1.5
+#define PBR_QUADRATIC_BOOST 1.0
 // force quadratic light falloff (only looks right with gamma values near 2.2)
-#define PBR_FORCE_QUADRATIC_FALLOFF 0
+#define PBR_FORCE_QUADRATIC_FALLOFF 1
 // prevent quadratic light from being infinite at zero distance
 #define PBR_FORCE_QUADRATIC_FALLOFF_CONSTANT 4.0
 // whether to reinterpret falloff as being gamma-compressed (recommended: OFF!!!! (0). behavior has changed!)
@@ -203,14 +205,21 @@ vec3 fresnelSchlick(float incidence, vec3 f0, vec3 f90)
 {
     return mix(f0, f90, fresnelFactorSchlick(incidence));
 }
-float distGGX(float halfIncidence, float r)
+
+float distGGX(float VdotH, float r)
 {
+    float t = VdotH*VdotH;
+    // roughness is already statistical
+    // this is statistical-squared, so artistic-quarted
     float r2 = r*r;
     
-    float d = halfIncidence*halfIncidence * (r2 - 1.0) + 1.0;
+    //float d = t * (r2 - 1.0) + 1.0;
+    //return r2 / (d * d * PI);
     
-    return r2 / (d * d * PI);
+    float q = r / (r2*t - t + 1.00001);
+    return q*q * (1.0/PI);
 }
+
 float distGGXApprox(float halfIncidence, float r)
 {
     float r2 = r*r;
@@ -266,6 +275,22 @@ float geoGGX(float viewIncidence, float lightInsolation, float r)
     float i = viewIncidence + lightInsolation;
     return 0.5 / (mix(2.0 * j, i, r) + 0.1);
 }
+// height correlation + algebraic cancelation
+float geoSmithHC(vec3 N, vec3 V, vec3 L, float r)
+{
+    float NdotL = dot(N, L);
+    float NdotV = dot(N, V);
+    //if (NdotL <= 0.0 || NdotV <= 0.0) return 0.0;
+        
+    float a = max(0.0, NdotV) * sqrt(mix(NdotL*NdotL, 1.0, r*r));
+    float b = max(0.0, NdotL) * sqrt(mix(NdotV*NdotV, 1.0, r*r));
+    float ret = 0.5 / (a + b + 0.0001);
+    
+    // fast and almost-accurate approximation from Filament
+    //float ret = 0.5 / mix(2.0 * NdotL * NdotV, NdotL + NdotV, r);
+    
+    return ret;
+}
 
 float BRDF(vec3 normalDir, vec3 viewDir, vec3 lightDir, vec3 halfDir, float roughness)
 {
@@ -293,6 +318,9 @@ float BRDF(vec3 normalDir, vec3 viewDir, vec3 lightDir, vec3 halfDir, float roug
 
 #if PBR_GLTF2_BRDF && !PBR_HIGHPERF
     geo = geoSmithGLTF(normalDir, viewDir, lightDir, halfDir, roughness);
+#endif
+#if PBR_HC_BRDF && !PBR_HIGHPERF
+    geo = geoSmithHC(normalDir, viewDir, lightDir, roughness);
 #endif
     
     return NDF * geo;
@@ -503,7 +531,7 @@ vec3 to_srgb(vec3 color)
     return pow(max(vec3(0.0), color), vec3(1.0/GAMMA));
 }
 
-vec3 perLightPBR(float sss, float alpha, vec3 diffuseColor, vec3 diffuseVertexColor, vec3 ambientColor, vec3 shadowing, vec3 normal, vec3 viewDir, vec3 lightDir,
+vec3 perLightPBR(float sss, float alpha, vec3 diffuseColor, vec3 diffuseVertexColor, vec3 ambientColor, float shadowing, vec3 normal, vec3 viewDir, vec3 lightDir,
     float lightDistance, float radius, float falloff, float cutoff,
     vec3 ambientLightColor, vec3 lightColor, float metallicity, float roughness, float ao, vec3 f0, vec3 f90, bool indoors, inout vec3 ambientBias)
 {
@@ -658,8 +686,8 @@ vec3 perLightPBR(float sss, float alpha, vec3 diffuseColor, vec3 diffuseVertexCo
         diffuseIllum = vec3(min(1.0, baseIncidence*64.0) * (falloff * (1.0/PI)));
     #endif
     
-    vec3 diff = diffuseColor * diffuseIllum  * (lightColor * shadowing) * diff_fresnel;
-    vec3 spec = vec3(1.0)    * specular * (lightColor * shadowing) * fresnel * spec_scale;
+    vec3 diff = diffuseColor * diffuseIllum * (lightColor * shadowing) * diff_fresnel;
+    vec3 spec = vec3(1.0)    * specular     * (lightColor * shadowing) * fresnel * spec_scale;
     // the specular term was already divided by pi in the BRDF function (distGGX specifically)
     // likewise, metallicity was taken into account when calculating the f0 component for specularity
     
@@ -778,7 +806,7 @@ vec3 perAmbientPBR(vec3 diffuseColor, vec3 ambientColor, vec3 ambientBias, vec3 
 
 vec3 doLightingPBR(vec2 screenCoord, float alpha,
     vec3 diffuseColor, vec3 diffuseVertexColor, vec3 ambientColor, vec3 emissiveColor, vec3 specularTint,
-    vec3 viewPos, inout vec3 normal, float _shadowing, float metallicity, float roughness, float ao, float sss, float f0_scalar)
+    vec3 viewPos, inout vec3 normal, float shadowing, float metallicity, float roughness, float ao, float sss, float f0_scalar)
 {
     #if DEBUG_SHOW_ROUGHNESS
         return vec3(roughness);
@@ -815,7 +843,7 @@ vec3 doLightingPBR(vec2 screenCoord, float alpha,
         normal.g = roughness * 2.0 - 1.0;
         
         int aoi = int(floor(ao * 15.0 + 0.5));
-        int shi = int(floor(_shadowing * 15.0 + 0.5));
+        int shi = int(floor(shadowing * 15.0 + 0.5));
         int aoishi = aoi * 16 + shi;
         ao = float(aoishi) / 255.0;
         
@@ -863,8 +891,6 @@ vec3 doLightingPBR(vec2 screenCoord, float alpha,
     
     vec3 ambientBias = vec3(0.0);
     
-    vec3 shadowing = vec3(_shadowing);
-    //shadowing.r = pow(shadowing.r, 0.7);
     vec3 olight = vec3(0.0);
     
     olight += perLightPBR(
@@ -954,7 +980,7 @@ vec3 doLightingPBR(vec2 screenCoord, float alpha,
         ambient = p_to_linear(ambient);
         vec3 lightColor = p_to_linear(diffuse * LIGHT_STRENGTH_POINT);
         
-        olight += perLightPBR(sss, alpha, diffuseColor, diffuseVertexColor, ambientColor, vec3(1.0), normal, viewDir, lightDir, lightDistance, abs(radius) + 0.0001, falloff, cutoff, ambient, lightColor, metallicity, roughness, ao, f0, f90, indoors, ambientBias);
+        olight += perLightPBR(sss, alpha, diffuseColor, diffuseVertexColor, ambientColor, 1.0, normal, viewDir, lightDir, lightDistance, abs(radius) + 0.0001, falloff, cutoff, ambient, lightColor, metallicity, roughness, ao, f0, f90, indoors, ambientBias);
     }
     
     olight += perAmbientPBR(diffuseColor, ambientColor, ambientBias, ambientAdjust, ao, metallicity, roughness, normal, viewDir, f0, f90);
@@ -993,7 +1019,7 @@ void specMapToPBR(vec4 specTex, out float metallicity, out float roughness, out 
     #else
         roughness = specTex.g;
     #endif
-    roughness *= roughness;
+    roughness *= roughness; // artistic-to-statistical roughness conversion
     roughness = max(roughness, PBR_MAT_ROUGHNESS_FLOOR);
     
     #if DO_PBR

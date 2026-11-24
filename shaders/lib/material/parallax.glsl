@@ -65,10 +65,10 @@ mat3 calculateTBN(vec3 N, vec3 fragPos, vec2 uv, int mode, mat3 defmat)
     vec2 duvdy = dFdy(uv);
     duvdx += sign(duvdx) * 0.00003;
     duvdy += sign(duvdy) * 0.00003;
-    float determinant = duvdx.x * duvdy.y - duvdx.y * duvdy.x;
+    float determinant_ = duvdx.x * duvdy.y - duvdx.y * duvdy.x;
     //if (abs(sqrt(determinant)) < 0.0001) return defmat;
     //determinant += sign(determinant) * 0.0001;
-    float invDet = 1.0 / determinant;
+    float invDet = 1.0 / determinant_;
     
     vec3 T = (dpdx * duvdy.y - dpdy * duvdx.y) * invDet;
     vec3 B = (dpdy * duvdx.x - dpdx * duvdy.x) * invDet;
@@ -104,10 +104,22 @@ mat3 calculateTBN(vec3 N, vec3 fragPos, vec2 uv, int mode, mat3 defmat)
     return ret;
 }
 
+vec4 pom_TX(sampler2D tx, vec2 uv)
+{
+    #if PBR_POM_NO_TEXTURELOD
+    return texture2D(tx, uv.xy);
+    #else
+    return texture2DLod(tx, uv.xy, 0.0);
+    #endif
+}
+
+float pom_l2(vec2 x) { return dot(x, x); }
+
 vec3 parallaxOcclusionScan(sampler2D refTexture, vec2 uv, vec3 eyeTexSpace, mat3 normalToViewMatrix)
 {
     // likely to be glitchy + probably too far away to care about
-    if (length(dFdx(uv)) > 0.1 || length(dFdy(uv)) > 0.1) return vec3(uv, 0.0);
+    if (pom_l2(dFdx(uv)) > 0.01 || pom_l2(dFdy(uv)) > 0.01) return vec3(uv, 0.0);
+    //return vec3(uv, 0.0);
     
 #if POM_MODE == POM_MODE_NONE
     return vec3(uv, 0.0);
@@ -135,42 +147,49 @@ vec3 parallaxOcclusionScan(sampler2D refTexture, vec2 uv, vec3 eyeTexSpace, mat3
     vec3 coord3d_origin = vec3(uv, _scale_offs) - newEyeTexSpace * (1.0 - _scale_offs);
     vec3 coord3d        = coord3d_origin + newEyeTexSpace;
     
-    // multipass approach
-    float passes = 3.0;
-    float h_iter = 12.0;
-    float i = 1.0;
-    vec3 expected_3d = coord3d_origin;
+    // linear scan + binary search approach
+    const float h_iter = 5.0; // FIXME: make tunable
+    const int binary_search_times = 4; // FIXME: make tunable
     
-    float h_iter_loop = 1.0 / h_iter;
-    for (float j = 0; j < passes; j += 1.0)
+    const float iter = (1.0/h_iter)*0.9999;
+    
+    // initial scan
+    float start = 0.0;
+    float end = 1.0;
+    
+    for (float i = 0.0; i <= 1.0; i += iter)
     {
-        float prev_height = 0.0;
-        for (; i <= h_iter; i += h_iter * h_iter_loop)
+        float t = i;
+        vec3 expected_3d = mix(coord3d_origin, coord3d, t);
+        float probe_height = pom_TX(refTexture, expected_3d.xy).a;
+        if (h_iter != 0.0 || i != 0.0)
         {
-            float t = i / h_iter;
-            expected_3d = mix(coord3d_origin, coord3d, t);
-            #if PBR_POM_NO_TEXTURELOD
-            float probe_height = texture2D(refTexture, expected_3d.xy).a;
-            #else
-            float probe_height = texture2DLod(refTexture, expected_3d.xy, 0.0).a;
-            #endif
-            if (probe_height > expected_3d.z)
-            {
-                if (j + 1 == passes)
-                {
-                    // linear contact estimation
-                    float prev_3d_z = mix(coord3d_origin, coord3d, t - h_iter_loop).z;
-                    float a = prev_3d_z - prev_height;
-                    float b = probe_height - expected_3d.z;
-                    
-                    expected_3d = mix(coord3d_origin, coord3d, t - (b/(abs(a+b)+0.0001)) * h_iter_loop);
-                }
-                break;
-            }
-            prev_height = probe_height;
+            start = t - iter;
+            end = t;
         }
-        i -= h_iter * h_iter_loop;
-        h_iter_loop /= h_iter;
+        if (probe_height > expected_3d.z)
+            break;
+    }
+    // 3-step binary search
+    for (int ii = 0; ii < binary_search_times; ii += 1)
+    {
+        float t = (start+end)*0.5;
+        vec3 expected_3d = mix(coord3d_origin, coord3d, t);
+        float probe_height = pom_TX(refTexture, expected_3d.xy).a;
+        if (probe_height > expected_3d.z)
+            end = t;
+        else
+            start = t;
+    }
+    vec3 expected_3d = coord3d_origin;
+    {
+        // linear contact estimation
+        vec3 ac = mix(coord3d_origin, coord3d, start);
+        vec3 bc = mix(coord3d_origin, coord3d, end);
+        float a = ac.z - pom_TX(refTexture, ac.xy).a;
+        float b = pom_TX(refTexture, bc.xy).a - bc.z;
+        
+        expected_3d = mix(ac, bc, (a/(abs(a+b)+0.0001)));
     }
     
     return expected_3d;
@@ -183,6 +202,7 @@ vec3 getParallaxShadowOffset(vec2 offset, vec2 uv, mat3 TBN)
     // so we need to use a triangle-derived TBN
     mat3 nm = transpose(inverse(mat3(gl_ModelViewMatrix)));
     TBN = calculateTBN(normalize(nm * passNormal), passViewPos, uv, POM_MODE, TBN);
+    //TBN = calculateTBN(vec3(0.0), passViewPos, uv, POM_MODE_EXT3, TBN);
     
     vec3 uvWorld = TBN * vec3(uv, 0.0);
     float _dx = length(dFdx(passViewPos.xyz)) / (length(dFdx(uvWorld)) + 0.00000001);

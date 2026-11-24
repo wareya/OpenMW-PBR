@@ -1,0 +1,101 @@
+uniform_float uExposure {
+    default = 1.0;
+    min = 0.1;
+    max = 10.0;
+    step = 0.1;
+    display_name = "Exposure";
+}
+
+uniform_float uThreshold {
+    default = 1.0;
+    min = 0.0;
+    max = 2.0;
+    step = 0.01;
+    display_name = "Desaturation Threshold";
+}
+
+uniform_float uRate {
+    default = 0.25;
+    min = 0.0;
+    max = 1.0;
+    step = 0.01;
+    display_name = "Desaturation Rate";
+}
+
+uniform_bool uTonemap {
+    default = true;
+    display_name = "Enable Tonemapping";
+}
+
+uniform_bool uAccurateSRGB {
+    default = false;
+    display_name = "Accurate sRGB";
+}
+
+fragment final() {
+    // --- Color Space Functions ---
+    vec3 to_linear(vec3 c) {
+        if (uAccurateSRGB) {
+            bvec3 cutoff = lessThan(c, vec3(0.04045));
+            vec3 higher = pow((c + vec3(0.055))/vec3(1.055), vec3(2.4));
+            vec3 lower = c / vec3(12.92);
+            return mix(higher, lower, vec3(cutoff));
+        }
+        return c * c; 
+    }
+
+    vec3 to_srgb(vec3 c) {
+        if (uAccurateSRGB) {
+            bvec3 cutoff = lessThan(c, vec3(0.0031308));
+            vec3 higher = vec3(1.055) * pow(c, vec3(1.0/2.4)) - vec3(0.055);
+            vec3 lower = c * vec3(12.92);
+            return mix(higher, lower, vec3(cutoff));
+        }
+        return sqrt(c);
+    }
+
+    omw_In vec2 omw_TexCoord;
+
+    void main() {
+        vec3 c = omw_GetLastShader(omw_TexCoord).rgb;
+        c = to_linear(c);
+
+        // Applying the manual exposure multiplier
+        // Using uExposure directly as the linear multiplier
+        vec3 g = c * uExposure;
+
+        // --- Desaturation Logic (Ported from HDR Linear) ---
+        float gray_val = (g.r + g.g + g.b) * 0.333;
+        float overshoot = max(0.0, max(max(g.r, g.g), g.b) - uThreshold) * uRate * 0.333;
+        overshoot = clamp(overshoot, 0.0, 1.0);
+        g = mix(g, vec3(gray_val), overshoot);
+
+        // --- Tonemapping Logic (Ported from HDR Linear) ---
+        if (uTonemap) {
+            float Y = (g.r + g.g + g.b) * 0.333;
+            float tmF = 1.0 / sqrt(Y * Y + 1.0);
+            
+            vec3 oldg = g;
+            g = g * tmF;
+
+            // Re-normalizing based on exposure so the midtones don't tank
+            // This is the tmF_W logic from the original shader
+            float tmF_W = uExposure / sqrt(uExposure * uExposure + 1.0);
+            g /= tmF_W;
+
+            // The HDR shader only blends the tonemapping in as exposure increases
+            g = mix(oldg, g, clamp((uExposure - 1.0) * 4.0, 0.0, 1.0));
+        }
+
+        g = to_srgb(g);
+        omw_FragColor = vec4(clamp(g, 0.0, 1.0), 1.0);
+    }
+}
+
+technique {
+    passes = final;
+    description = "Manual Exposure with optional Tonemapping and sRGB accuracy.";
+    author = "Wareya, Hrnchamd";
+    version = "1.3";
+    hdr = true;
+}

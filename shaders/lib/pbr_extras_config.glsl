@@ -13,9 +13,17 @@
 
 #define PBR_SELF_SHADOW 1
 // set to your shadowmap resolution
-#define PBR_SHADOWMAP_RES (2048.0)
+#define PBR_SHADOWMAP_RES (1024.0)
 // set to a number between 1 and 16. values from 2 to 5 are normal, values above 5 are silly. 1 means no filtering.
 #define PBR_SHADOW_FILTER_SIZE 2
+// use a simpler shadow filtering algorithm that's more susceptible to acne but much faster
+#define PBR_SHADOW_FILTER_LITE 1
+
+// Whether to force the lite version to be geometrically face-aligned.
+///  Reduces the lite version's false darkening of faces almost parallel with the light.
+//   (In other words you want to increase your shadow bias settings slightly if you use this.)
+//   Unfortunately, the way this is calculated can break shadows on alpha-tested objects on pathologically strict drivers.
+#define PBR_SHADOW_FILTER_LITE_ALIGNED 1
 
 // experiment
 #define PBR_FAKE_SSS 1
@@ -28,6 +36,6 @@
 // If you're going to use deferred shading, you probably want this
 //    set to 1 to make some town terrains look less bizarre and plasticky.
 // Otherwise, leave it set to 0.
-#define PBR_EARLY_TERRAIN_VERTCOLOR_AO_HACK 1
+#define PBR_EARLY_TERRAIN_VERTCOLOR_AO_HACK 0
 
 #endif // LIB_PBR_CONFIG_EXTRAS
