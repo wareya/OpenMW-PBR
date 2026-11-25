@@ -1,4 +1,6 @@
-**This version is for OpenMW dev builds.** See https://github.com/wareya/OpenMW-PBR/releases for OpenMW stable/release builds.
+**The main branch of this repository is for OpenMW dev builds.**
+
+See https://github.com/wareya/OpenMW-PBR/releases for OpenMW stable/release builds (including **0.52 RC1 and newer**).
 
 This repository is not associated with OpenMW
 
@@ -16,7 +18,7 @@ This repository is not associated with OpenMW
 
 (screenshots taken with other mods also installed)
 
-Minimally invasive PBR shaders for OpenMW. Don't install unless you know what you're doing. Make a backup of the vanilla shaders folder by COPYING it (NOT by renaming it), then copy these shaders over the base ones (DO NOT try to install this over another core shader mod! IT WILL NOT WORK!!!).
+Minimally invasive PBR shaders for OpenMW. Don't install unless you know what you're doing. Make a backup of the vanilla shaders folder by COPYING it (NOT by renaming it), then copy these shaders over the base ones. (DO NOT try to install this over another core shader mod! IT WILL NOT WORK!!!)
 
 Implements modern PBR. Highly configurable. Lighting math is done in (approximately) linear light. Configuration is in lighting_pbr.glsl.
 
